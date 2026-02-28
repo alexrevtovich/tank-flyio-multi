@@ -1040,7 +1040,7 @@ function sendToPlayer(room, id, obj) {
 server.listen(PORT, '0.0.0.0', () => {
   console.log('');
   console.log('========================================');
-  console.log('  SHOOT GAME SERVER (Multi-Room)');
+  console.log('  KOSH TANKS SERVER (Multi-Room)');
   console.log('========================================');
   console.log(`  Listening on port ${PORT}`);
   console.log('  Rooms are created on demand');
