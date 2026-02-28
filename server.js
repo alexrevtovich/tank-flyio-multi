@@ -280,8 +280,11 @@ function handleWSConnection(ws) {
         let isNewRoom = false;
         if (roomId && rooms.has(roomId)) {
           room = rooms.get(roomId);
+        } else if (roomId) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Room not found' }));
+          break;
         } else {
-          roomId = roomId || generateRoomId();
+          roomId = generateRoomId();
           room = createRoom(roomId);
           isNewRoom = true;
         }
