@@ -38,9 +38,6 @@
     canvas {
       border: 2px solid #333;
       display: block;
-      max-width: 100vw;
-      max-height: 80vh;
-      object-fit: contain;
     }
 
     /* ── Scoreboard ── */
@@ -309,11 +306,9 @@
     <div id="room-error"></div>
   </div>
 
-  <h1>KOSH TANKS</h1>
-
   <div id="scoreboard"></div>
 
-  <div id="info-bar">
+  <div id="info-bar" style="display:none">
     <span id="status-text">Connecting...</span>
   </div>
 
@@ -351,6 +346,16 @@
     const canvas = document.getElementById('game');
     const ctx = canvas.getContext('2d');
     const W = 1800, H = 1000, R = 20, PR = 4;
+
+    function fitCanvas() {
+      const maxW = window.innerWidth - 4;
+      const maxH = window.innerHeight - 120;
+      const scale = Math.min(maxW / W, maxH / H, 1);
+      canvas.style.width = (W * scale) + 'px';
+      canvas.style.height = (H * scale) + 'px';
+    }
+    fitCanvas();
+    window.addEventListener('resize', fitCanvas);
     const TANK_DISPLAY = 48; // drawn size in pixels
 
     const PLAYER_HEX_COLORS = [
