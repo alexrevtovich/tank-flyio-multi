@@ -373,6 +373,7 @@
     let walls = [];
     let gameActive = false;
     let currentRoomId = null;  // room code assigned by server
+    let isOwner = false;
 
     // Soundtracks
     const soundtracks = [
@@ -1292,8 +1293,17 @@
         switch (msg.type) {
           case 'room_joined':
             currentRoomId = msg.roomId;
+            isOwner = !!msg.isOwner;
             document.getElementById('room-picker').classList.add('hidden');
+            document.querySelector('.player-count-selector').style.display = isOwner ? '' : 'none';
+            document.querySelector('.bot-controls').style.display = isOwner ? '' : 'none';
             updateLobbyUrl();
+            break;
+
+          case 'owner_transfer':
+            isOwner = true;
+            document.querySelector('.player-count-selector').style.display = '';
+            document.querySelector('.bot-controls').style.display = '';
             break;
 
           case 'error':

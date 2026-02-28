@@ -74,7 +74,8 @@ function createRoom(roomId) {
     bgSeed: 0,
     gameLoopInterval: null,
     gameStartTime: 0,
-    frameShotsFired: []
+    frameShotsFired: [],
+    ownerWs: null
   };
   initPlayers(room, 2);
   room.walls = generateWalls();
@@ -125,7 +126,7 @@ function initPlayers(room, count) {
     const isBot = room.botPlayerIds.has(id);
     room.players.push({
       id,
-      code: isBot ? 'BOT' : String(id).repeat(4),
+      code: isBot ? 'BOT' : String(id),
       ws: null,
       connected: isBot ? true : false,
       isBot,
@@ -256,16 +257,19 @@ function handleWSConnection(ws) {
       case 'register_game': {
         let roomId = msg.roomId || null;
         let room;
+        let isNewRoom = false;
         if (roomId && rooms.has(roomId)) {
           room = rooms.get(roomId);
         } else {
           roomId = roomId || generateRoomId();
           room = createRoom(roomId);
+          isNewRoom = true;
         }
         room.gameScreens.push(ws);
+        if (isNewRoom) room.ownerWs = ws;
         assignedRole = 'game';
         assignedRoom = room;
-        ws.send(JSON.stringify({ type: 'room_joined', roomId: room.id }));
+        ws.send(JSON.stringify({ type: 'room_joined', roomId: room.id, isOwner: ws === room.ownerWs }));
         sendInitToOneGame(room, ws);
         if (room.gameRunning) {
           sendToOneGame(ws, {
@@ -280,6 +284,7 @@ function handleWSConnection(ws) {
 
       case 'set_player_count': {
         if (!assignedRoom || assignedRole !== 'game') break;
+        if (ws !== assignedRoom.ownerWs) break;
         const room = assignedRoom;
         const count = Math.max(2, Math.min(7, parseInt(msg.count) || 2));
         if (!room.gameRunning) {
@@ -296,6 +301,7 @@ function handleWSConnection(ws) {
 
       case 'add_bot': {
         if (!assignedRoom || assignedRole !== 'game') break;
+        if (ws !== assignedRoom.ownerWs) break;
         const room = assignedRoom;
         if (room.gameRunning) break;
         if (room.playerCount >= 7) break;
@@ -324,6 +330,7 @@ function handleWSConnection(ws) {
 
       case 'remove_bot': {
         if (!assignedRoom || assignedRole !== 'game') break;
+        if (ws !== assignedRoom.ownerWs) break;
         const room = assignedRoom;
         if (room.gameRunning) break;
         if (room.botPlayerIds.size === 0) break;
@@ -495,6 +502,13 @@ function handleWSConnection(ws) {
     if (assignedRole === 'game') {
       const idx = room.gameScreens.indexOf(ws);
       if (idx !== -1) room.gameScreens.splice(idx, 1);
+      if (ws === room.ownerWs) {
+        room.ownerWs = room.gameScreens[0] || null;
+        if (room.ownerWs) {
+          room.ownerWs.send(JSON.stringify({ type: 'owner_transfer' }));
+          console.log(`Room ${room.id}: Ownership transferred`);
+        }
+      }
       console.log(`Room ${room.id}: Game screen disconnected (${room.gameScreens.length} remaining)`);
     } else if (typeof assignedRole === 'number') {
       const player = room.players[assignedRole - 1];
