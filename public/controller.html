@@ -435,6 +435,7 @@
     let playerName = null;
     let playerId = null;
     let connected = false;
+    let joinRetries = 0;
 
     // Parse room code from URL (?room=XXXX)
     const urlParams = new URLSearchParams(window.location.search);
@@ -642,10 +643,23 @@
         switch (msg.type) {
           case 'welcome':
             playerId = msg.playerId;
+            joinRetries = 0;
             showController(msg);
             break;
           case 'error':
             setError(msg.message);
+            // Auto-retry join if room not found yet (room may still be starting)
+            if (msg.message === 'Room not found' && joinCode) {
+              joinRetries = (joinRetries || 0) + 1;
+              if (joinRetries <= 10) {
+                setStatus('Room not ready, retrying... (' + joinRetries + ')');
+                setTimeout(() => {
+                  send({ type: 'join', code: joinCode, name: playerName, roomId: roomId });
+                }, 2000);
+              } else {
+                setError('Room not found. Check the room code and try again.');
+              }
+            }
             break;
           case 'game_state':
             // Game started — show controls, hide ready screen

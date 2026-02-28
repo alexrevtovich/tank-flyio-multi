@@ -1261,10 +1261,12 @@
     }
 
     // ── WebSocket ──
-    let pendingRoomId = null; // room ID to send on connect/reconnect
+    let shouldRegister = false; // true when we need to send register_game on connect
+    let targetRoomId = null;    // room ID to request (null = create new)
 
     function connectToRoom(roomId) {
-      pendingRoomId = roomId;
+      shouldRegister = true;
+      targetRoomId = roomId;
       if (ws) { try { ws.close(); } catch {} }
       connect();
     }
@@ -1275,10 +1277,12 @@
 
       ws.onopen = () => {
         document.getElementById('status-text').textContent = 'Connected';
-        // Always register with the room we're targeting
-        const roomId = currentRoomId || pendingRoomId;
-        if (roomId !== null || pendingRoomId !== undefined) {
-          ws.send(JSON.stringify({ type: 'register_game', roomId: roomId }));
+        if (currentRoomId) {
+          // Reconnecting to an existing room
+          ws.send(JSON.stringify({ type: 'register_game', roomId: currentRoomId }));
+        } else if (shouldRegister) {
+          // First connection — create or join room
+          ws.send(JSON.stringify({ type: 'register_game', roomId: targetRoomId }));
         }
       };
 
