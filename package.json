@@ -1,0 +1,12 @@
+{
+  "name": "shoot-game",
+  "version": "1.0.0",
+  "description": "Browser multiplayer game with phone controllers - shake to shoot",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.16.0"
+  }
+}

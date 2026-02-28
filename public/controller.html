@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Controller</title>
+  <!--SERVER_CONFIG-->
+  <style>
+    * {
+      touch-action: none;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html, body {
+      margin: 0; padding: 0;
+      width: 100%; height: 100%;
+      overflow: hidden;
+      position: fixed;
+      background: #0f0f1a;
+      color: #fff;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+    }
+
+    /* ── Screens ── */
+    .screen { display: none; width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
+    .screen.active {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+    }
+
+    /* ── Join Screen ── */
+    .join-box {
+      display: flex; flex-direction: column;
+      align-items: center; gap: 14px; padding: 24px;
+    }
+    .join-box h1 { font-size: 28px; letter-spacing: 3px; margin: 0; font-weight: 800; }
+    .join-box p { font-size: 13px; color: rgba(255,255,255,0.5); margin: 0; }
+
+    #code-input {
+      width: 180px; padding: 14px;
+      font-size: 32px; font-weight: 700;
+      text-align: center; letter-spacing: 8px;
+      text-transform: uppercase;
+      background: rgba(255,255,255,0.1);
+      border: 2px solid rgba(255,255,255,0.2);
+      border-radius: 10px; color: #fff; outline: none;
+    }
+    #code-input:focus { border-color: rgba(255,255,255,0.5); }
+    #code-input::placeholder { color: rgba(255,255,255,0.25); letter-spacing: 6px; }
+
+    #name-input {
+      width: 180px; padding: 14px;
+      font-size: 24px; font-weight: 700;
+      text-align: center; letter-spacing: 3px;
+      text-transform: uppercase;
+      background: rgba(255,255,255,0.1);
+      border: 2px solid rgba(255,255,255,0.2);
+      border-radius: 10px; color: #fff; outline: none;
+    }
+    #name-input:focus { border-color: rgba(255,255,255,0.5); }
+    #name-input::placeholder { color: rgba(255,255,255,0.25); letter-spacing: 3px; }
+
+    #join-btn {
+      width: 180px; padding: 12px;
+      font-size: 16px; font-weight: 700; letter-spacing: 2px;
+      background: #4CAF50; color: #fff;
+      border: none; border-radius: 10px; cursor: pointer;
+    }
+    #join-btn:active { background: #388E3C; transform: scale(0.96); }
+
+    #error { color: #ff5252; font-size: 13px; min-height: 18px; }
+    #status { color: rgba(255,255,255,0.4); font-size: 12px; min-height: 16px; }
+
+    /* ── Controller Screen ── */
+    #ctrl.active {
+      display: flex; flex-direction: column;
+      align-items: stretch; justify-content: space-between;
+      padding: 8px;
+    }
+
+    #banner {
+      display: none;
+    }
+
+    #score-banner { display: none; }
+
+    #shoot-status {
+      text-align: center; padding: 4px 12px;
+      border-radius: 6px; font-size: 12px; font-weight: 600;
+      margin-top: 4px; flex-shrink: 0;
+      transition: all 0.2s;
+    }
+    #shoot-status.ready {
+      background: rgba(76,175,80,0.3);
+      color: #81C784;
+    }
+    #shoot-status.fired {
+      background: rgba(255,152,0,0.3);
+      color: #FFB74D;
+    }
+    #shoot-status.hit {
+      background: rgba(255,68,68,0.3);
+      color: #FF8A80;
+    }
+
+    #controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex: 1; min-height: 0;
+      padding: 0 16px;
+    }
+
+    /* ── Joystick ── */
+    #joystick-zone {
+      width: 50%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #joystick-base {
+      width: 210px; height: 210px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.06);
+      border: 2px solid rgba(255,255,255,0.15);
+      position: relative;
+    }
+
+    #joystick-knob {
+      width: 84px; height: 84px;
+      border-radius: 50%;
+      background: var(--color, rgba(255,255,255,0.2));
+      border: 2px solid rgba(255,255,255,0.4);
+      position: absolute;
+      left: 50%; top: 50%;
+      transform: translate(-50%, -50%);
+      transition: background 0.1s;
+    }
+    #joystick-knob.active {
+      background: var(--color, rgba(255,255,255,0.35));
+      border-color: rgba(255,255,255,0.6);
+    }
+
+    /* ── Shoot Button ── */
+    #shoot-btn {
+      width: 150px; height: 150px;
+      border-radius: 50%;
+      border: 3px solid rgba(255,255,255,0.3);
+      background: rgba(255,80,0,0.25);
+      color: #fff;
+      font-size: 14px; font-weight: 800;
+      letter-spacing: 1px;
+      display: flex; align-items: center; justify-content: center;
+      transition: transform 0.06s, background 0.06s;
+      flex-shrink: 0;
+      margin-right: 10%;
+    }
+    #shoot-btn:active, #shoot-btn.pressed {
+      transform: scale(0.88);
+      background: rgba(255,80,0,0.7);
+      border-color: #FF5500;
+    }
+
+    /* ── Shake indicator ── */
+    #shake-indicator {
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 120px; height: 120px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.15);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      font-size: 40px;
+      pointer-events: none;
+      z-index: 50;
+      animation: shoot-pulse 0.3s ease-out;
+    }
+    @keyframes shoot-pulse {
+      0% { transform: translate(-50%, -50%) scale(0.5); opacity: 1; }
+      100% { transform: translate(-50%, -50%) scale(1.5); opacity: 0; }
+    }
+
+    /* ── Connection dot ── */
+    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-left: 6px; }
+    .dot.on  { background: #4CAF50; }
+    .dot.off { background: #ff5252; animation: blink 1s infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    /* ── Portrait warning on controller ── */
+    @media (orientation: portrait) {
+      #ctrl.active::after {
+        content: "Please rotate to landscape";
+        position: fixed; top:0;left:0;right:0;bottom:0;
+        background: rgba(15,15,26,0.95);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 18px; font-weight: 600; color: rgba(255,255,255,0.6);
+        z-index: 100;
+      }
+    }
+
+    @media (max-height: 340px) {
+      #joystick-base { width: 165px; height: 165px; }
+      #joystick-knob { width: 66px; height: 66px; }
+      #shoot-btn { width: 120px; height: 120px; font-size: 12px; }
+    }
+
+    /* ── Ready screen ── */
+    #ready-screen {
+      display: none;
+      flex: 1;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 20px;
+      gap: 10px;
+    }
+    #ready-screen.show {
+      display: flex;
+    }
+    #ready-btn {
+      width: 90%;
+      max-width: 400px;
+      height: 80px;
+      border-radius: 16px;
+      border: 3px solid rgba(255,255,255,0.3);
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: 3px;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s;
+      flex-shrink: 0;
+    }
+    #ready-btn.not-ready {
+      background: rgba(220,40,40,0.7);
+      color: #fff;
+    }
+    #ready-btn.is-ready {
+      background: rgba(76,175,80,0.7);
+      color: #fff;
+      border-color: #4CAF50;
+    }
+
+    /* ── Upgrade panel ── */
+    #upgrade-panel {
+      width: 90%;
+      max-width: 400px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 12px;
+      padding: 10px 14px;
+    }
+    #upgrade-title {
+      text-align: center;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      margin-bottom: 8px;
+      color: rgba(255,255,255,0.85);
+    }
+    .upgrade-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+      height: 32px;
+    }
+    .upgrade-row:last-child { margin-bottom: 0; }
+    .upgrade-label {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      width: 70px;
+      color: rgba(255,255,255,0.7);
+    }
+    .upgrade-dots {
+      display: flex;
+      gap: 4px;
+      flex: 1;
+      justify-content: center;
+    }
+    .upgrade-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.3);
+      background: transparent;
+      transition: background 0.15s;
+    }
+    .upgrade-dot.filled {
+      background: #4CAF50;
+      border-color: #4CAF50;
+    }
+    .upgrade-minus, .upgrade-plus {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      border: none;
+      font-size: 18px;
+      font-weight: 800;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      transition: opacity 0.15s;
+    }
+    .upgrade-minus {
+      background: rgba(220,40,40,0.6);
+      margin-right: 6px;
+    }
+    .upgrade-plus {
+      background: rgba(76,175,80,0.6);
+      margin-left: 6px;
+    }
+    .upgrade-minus:disabled, .upgrade-plus:disabled {
+      opacity: 0.25;
+      cursor: default;
+    }
+    #upgrade-remaining {
+      text-align: center;
+      font-size: 11px;
+      color: rgba(255,255,255,0.5);
+      margin-top: 6px;
+    }
+
+    /* ── Motion permission button ── */
+    #motion-permission {
+      display: none;
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.9);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 16px;
+    }
+    #motion-permission.show {
+      display: flex;
+    }
+    #motion-permission p {
+      font-size: 16px;
+      color: rgba(255,255,255,0.7);
+      text-align: center;
+      padding: 0 24px;
+    }
+    #motion-permission button {
+      padding: 14px 32px;
+      font-size: 18px; font-weight: 700;
+      background: #4CAF50; color: #fff;
+      border: none; border-radius: 12px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- JOIN SCREEN -->
+  <div id="join" class="screen active">
+    <div class="join-box">
+      <h1>JOIN</h1>
+      <p>Enter your 4-character code</p>
+      <input type="text" id="code-input" maxlength="4" autocomplete="off"
+             inputmode="text" autocapitalize="characters" placeholder="CODE" spellcheck="false">
+      <input type="text" id="name-input" maxlength="5" autocomplete="off"
+             inputmode="text" autocapitalize="characters" placeholder="NAME" spellcheck="false">
+      <button id="join-btn">JOIN</button>
+      <div id="error"></div>
+      <div id="status">Connecting...</div>
+    </div>
+  </div>
+
+  <!-- CONTROLLER SCREEN -->
+  <div id="ctrl" class="screen">
+    <div id="banner">Player <span id="pid"></span> <span class="dot off" id="dot"></span></div>
+    <div id="score-banner">Score: P1 0 — P2 0</div>
+    <div id="shoot-status" class="ready">SHAKE PHONE TO HEAL!</div>
+    <div id="controls">
+      <div id="joystick-zone">
+        <div id="joystick-base">
+          <div id="joystick-knob"></div>
+        </div>
+      </div>
+      <button id="shoot-btn">FIRE</button>
+    </div>
+    <div id="ready-screen">
+      <div id="upgrade-panel">
+        <div id="upgrade-title">UPGRADES (3 pts)</div>
+        <div class="upgrade-row" data-key="armour">
+          <button class="upgrade-minus" data-key="armour">&minus;</button>
+          <span class="upgrade-label">ARMOUR</span>
+          <div class="upgrade-dots" id="dots-armour"></div>
+          <button class="upgrade-plus" data-key="armour">+</button>
+        </div>
+        <div class="upgrade-row" data-key="engine">
+          <button class="upgrade-minus" data-key="engine">&minus;</button>
+          <span class="upgrade-label">ENGINE</span>
+          <div class="upgrade-dots" id="dots-engine"></div>
+          <button class="upgrade-plus" data-key="engine">+</button>
+        </div>
+        <div class="upgrade-row" data-key="repair">
+          <button class="upgrade-minus" data-key="repair">&minus;</button>
+          <span class="upgrade-label">REPAIR</span>
+          <div class="upgrade-dots" id="dots-repair"></div>
+          <button class="upgrade-plus" data-key="repair">+</button>
+        </div>
+        <div id="upgrade-remaining">0 points remaining</div>
+      </div>
+      <button id="ready-btn" class="not-ready">NOT READY</button>
+    </div>
+  </div>
+
+  <!-- Shake visual feedback -->
+  <div id="shake-indicator">💚</div>
+
+  <!-- Motion permission overlay (iOS requires user gesture) -->
+  <div id="motion-permission">
+    <p>This game uses your phone's motion sensor to heal.<br>Tap below to enable it.</p>
+    <button id="enable-motion-btn">ENABLE MOTION</button>
+  </div>
+
+  <script>
+    const WS_URL = window.WS_URL || ((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
+
+    let ws = null;
+    let joinCode = null;
+    let playerName = null;
+    let playerId = null;
+    let connected = false;
+
+    // Parse room code from URL (?room=XXXX)
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomId = (urlParams.get('room') || '').toUpperCase() || null;
+
+    const screamSFXPool = [
+      new Audio('/sound/sfx/man-screaming.mp3'),
+      new Audio('/sound/sfx/man-screaming2.mp3'),
+      new Audio('/sound/sfx/man-screaming3.mp3')
+    ];
+    screamSFXPool.forEach(a => { a.volume = 0.5; });
+    function playScream() {
+      const a = screamSFXPool[Math.floor(Math.random() * screamSFXPool.length)];
+      a.currentTime = 0; a.play().catch(() => {});
+    }
+
+    // ── Upgrade State ──
+    const UPGRADE_MAX = { armour: 5, engine: 5, repair: 3 };
+    let upgradeState = { armour: 0, engine: 0, repair: 0 };
+    let upgradePointsTotal = 3;
+
+    function initUpgradeDots() {
+      for (const key of ['armour', 'engine', 'repair']) {
+        const container = document.getElementById('dots-' + key);
+        container.innerHTML = '';
+        const max = UPGRADE_MAX[key];
+        for (let i = 0; i < max; i++) {
+          const dot = document.createElement('div');
+          dot.className = 'upgrade-dot';
+          container.appendChild(dot);
+        }
+      }
+    }
+
+    function renderUpgrades() {
+      const spent = upgradeState.armour + upgradeState.engine + upgradeState.repair;
+      const remaining = upgradePointsTotal - spent;
+      document.getElementById('upgrade-title').textContent = 'UPGRADES (' + upgradePointsTotal + ' pts)';
+      document.getElementById('upgrade-remaining').textContent = remaining + ' point' + (remaining !== 1 ? 's' : '') + ' remaining';
+
+      for (const key of ['armour', 'engine', 'repair']) {
+        const dots = document.getElementById('dots-' + key).children;
+        for (let i = 0; i < dots.length; i++) {
+          dots[i].classList.toggle('filled', i < upgradeState[key]);
+        }
+        // Disable buttons appropriately
+        const minusBtn = document.querySelector('.upgrade-minus[data-key="' + key + '"]');
+        const plusBtn = document.querySelector('.upgrade-plus[data-key="' + key + '"]');
+        minusBtn.disabled = upgradeState[key] <= 0;
+        plusBtn.disabled = remaining <= 0 || upgradeState[key] >= UPGRADE_MAX[key];
+      }
+    }
+
+    function sendUpgrades() {
+      send({ type: 'set_upgrades', armour: upgradeState.armour, engine: upgradeState.engine, repair: upgradeState.repair });
+    }
+
+    function initUpgradeButtons() {
+      document.querySelectorAll('.upgrade-plus').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const key = btn.getAttribute('data-key');
+          const spent = upgradeState.armour + upgradeState.engine + upgradeState.repair;
+          if (spent < upgradePointsTotal && upgradeState[key] < UPGRADE_MAX[key]) {
+            upgradeState[key]++;
+            renderUpgrades();
+            sendUpgrades();
+            if (navigator.vibrate) navigator.vibrate(30);
+          }
+        });
+      });
+      document.querySelectorAll('.upgrade-minus').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const key = btn.getAttribute('data-key');
+          if (upgradeState[key] > 0) {
+            upgradeState[key]--;
+            renderUpgrades();
+            sendUpgrades();
+            if (navigator.vibrate) navigator.vibrate(30);
+          }
+        });
+      });
+    }
+
+    // ── Shake Detection ──
+    const SHAKE_THRESHOLD = 12;   // acceleration (gravity-removed) magnitude to trigger
+    const SHAKE_DELTA_THRESHOLD = 15; // fallback: delta in accelerationIncludingGravity
+    const SHAKE_COOLDOWN = 500;   // ms between shots (prevent accidental double-fire)
+    let lastShakeTime = 0;
+    let motionEnabled = false;
+    let lastAcc = { x: 0, y: 0, z: 0 };
+    let hasLastAcc = false;
+
+    function initMotionDetection() {
+      // iOS 13+ requires permission request via user gesture
+      if (typeof DeviceMotionEvent !== 'undefined' &&
+          typeof DeviceMotionEvent.requestPermission === 'function') {
+        // Show permission button for iOS
+        document.getElementById('motion-permission').classList.add('show');
+        document.getElementById('enable-motion-btn').addEventListener('click', () => {
+          DeviceMotionEvent.requestPermission()
+            .then(response => {
+              if (response === 'granted') {
+                startListeningMotion();
+              }
+              document.getElementById('motion-permission').classList.remove('show');
+            })
+            .catch(() => {
+              document.getElementById('motion-permission').classList.remove('show');
+            });
+        });
+      } else if (typeof DeviceMotionEvent !== 'undefined') {
+        // Android / older iOS — just listen directly
+        startListeningMotion();
+      }
+    }
+
+    function startListeningMotion() {
+      motionEnabled = true;
+      window.addEventListener('devicemotion', onDeviceMotion, true);
+    }
+
+    let motionEventCount = 0;
+    function onDeviceMotion(event) {
+      motionEventCount++;
+      const now = Date.now();
+
+      // Method 1: Use acceleration (gravity removed) when available
+      const acc = event.acceleration;
+      let mag1 = 0;
+      if (acc && (acc.x !== null || acc.y !== null || acc.z !== null)) {
+        const x = acc.x || 0, y = acc.y || 0, z = acc.z || 0;
+        mag1 = Math.sqrt(x * x + y * y + z * z);
+      }
+
+      // Method 2: delta of accelerationIncludingGravity
+      const accG = event.accelerationIncludingGravity;
+      let delta = 0;
+      if (accG && (accG.x !== null || accG.y !== null || accG.z !== null)) {
+        const x = accG.x || 0, y = accG.y || 0, z = accG.z || 0;
+        if (hasLastAcc) {
+          const dx2 = x - lastAcc.x;
+          const dy2 = y - lastAcc.y;
+          const dz2 = z - lastAcc.z;
+          delta = Math.sqrt(dx2 * dx2 + dy2 * dy2 + dz2 * dz2);
+        }
+        lastAcc = { x, y, z };
+        hasLastAcc = true;
+      }
+
+      if ((now - lastShakeTime) <= SHAKE_COOLDOWN) return;
+
+      if (mag1 > SHAKE_THRESHOLD) {
+        lastShakeTime = now;
+        onShake();
+        return;
+      }
+
+      if (delta > SHAKE_DELTA_THRESHOLD) {
+        lastShakeTime = now;
+        onShake();
+      }
+    }
+
+    function onShoot() {
+      send({ type: 'shoot' });
+      if (navigator.vibrate) navigator.vibrate(50);
+    }
+
+    function onShake() {
+      // Send heal command to server
+      send({ type: 'heal' });
+
+      // Visual feedback
+      const indicator = document.getElementById('shake-indicator');
+      indicator.style.display = 'flex';
+      setTimeout(() => { indicator.style.display = 'none'; }, 300);
+
+      // Haptic feedback
+      if (navigator.vibrate) navigator.vibrate([30, 20, 30]);
+
+      // Update shoot status
+      const ss = document.getElementById('shoot-status');
+      ss.className = 'fired';
+      ss.textContent = 'HEAL!';
+      setTimeout(() => {
+        ss.className = 'ready';
+        ss.textContent = 'SHAKE PHONE TO HEAL!';
+      }, 500);
+    }
+
+    // ── Connect ──
+    function connect() {
+      setStatus('Connecting...');
+      try { ws = new WebSocket(WS_URL); } catch { scheduleReconnect(); return; }
+
+      ws.onopen = () => {
+        connected = true;
+        setStatus('Connected');
+        setDot(true);
+        if (joinCode) ws.send(JSON.stringify({ type: 'join', code: joinCode, name: playerName, roomId: roomId }));
+      };
+
+      ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        switch (msg.type) {
+          case 'welcome':
+            playerId = msg.playerId;
+            showController(msg);
+            break;
+          case 'error':
+            setError(msg.message);
+            break;
+          case 'game_state':
+            // Game started — show controls, hide ready screen
+            document.getElementById('controls').style.display = 'flex';
+            document.getElementById('shoot-status').style.display = '';
+            document.getElementById('ready-screen').classList.remove('show');
+            break;
+
+          case 'round_over':
+            // Show ready button + upgrades, hide controls
+            document.getElementById('controls').style.display = 'none';
+            document.getElementById('shoot-status').style.display = 'none';
+            const rb = document.getElementById('ready-btn');
+            rb.className = 'not-ready';
+            rb.textContent = 'NOT READY';
+            rb.disabled = false;
+            // Reset upgrade selections with new budget
+            upgradePointsTotal = msg.upgradePoints || 3;
+            upgradeState = { armour: 0, engine: 0, repair: 0 };
+            renderUpgrades();
+            document.getElementById('ready-screen').classList.add('show');
+            break;
+          case 'score_update':
+            updateScore(msg.scores);
+            break;
+          case 'shot_fired':
+            // Server confirmed our shot
+            break;
+          case 'feedback':
+            if (msg.action === 'vibrate') {
+              if (navigator.vibrate) navigator.vibrate(msg.duration || 100);
+              playScream();
+            }
+            if (msg.action === 'hit_confirm') {
+              const ss = document.getElementById('shoot-status');
+              ss.className = 'hit';
+              ss.textContent = 'HIT!';
+              if (navigator.vibrate) navigator.vibrate([50, 30, 50]);
+              setTimeout(() => {
+                ss.className = 'ready';
+                ss.textContent = 'SHAKE PHONE TO HEAL!';
+              }, 800);
+            }
+            break;
+        }
+      };
+
+      ws.onclose = () => {
+        connected = false;
+        setDot(false);
+        setStatus('Disconnected...');
+        scheduleReconnect();
+      };
+      ws.onerror = () => {};
+    }
+
+    let reconAttempts = 0;
+    function scheduleReconnect() {
+      const delay = Math.min(500 * Math.pow(2, reconAttempts), 5000);
+      reconAttempts++;
+      setTimeout(() => { reconAttempts = Math.max(0, reconAttempts - 1); connect(); }, delay);
+    }
+
+    function send(obj) {
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+    }
+
+    // ── UI ──
+    function setStatus(t) { document.getElementById('status').textContent = t; }
+    function setError(t) { document.getElementById('error').textContent = t; }
+    function setDot(on) {
+      const d = document.getElementById('dot');
+      if (d) { d.className = 'dot ' + (on ? 'on' : 'off'); }
+    }
+
+    function showController(msg) {
+      document.getElementById('join').classList.remove('active');
+      document.getElementById('ctrl').classList.add('active');
+      document.getElementById('pid').textContent = msg.playerId;
+      document.documentElement.style.setProperty('--color', msg.color);
+      document.getElementById('banner').style.background = msg.color;
+      if (screen.orientation && screen.orientation.lock)
+        screen.orientation.lock('landscape').catch(() => {});
+      if ('wakeLock' in navigator)
+        navigator.wakeLock.request('screen').catch(() => {});
+
+      // Initialize motion after controller is shown
+      initMotionDetection();
+    }
+
+    function updateScore(scores) {
+      const parts = [];
+      for (const id of Object.keys(scores).sort()) {
+        parts.push('P' + id + ':' + scores[id]);
+      }
+      document.getElementById('score-banner').textContent = parts.join(' | ');
+    }
+
+    // ── Joystick ──
+    let joystickActive = false;
+    let joystickTouchId = null;
+    let joyX = 0, joyY = 0;
+    const DEADZONE = 0.15;
+    const SEND_INTERVAL = 33; // ~30 sends/sec
+    let lastSendTime = 0;
+    let sendScheduled = false;
+
+    function initJoystick() {
+      const zone = document.getElementById('joystick-zone');
+      const base = document.getElementById('joystick-base');
+      const knob = document.getElementById('joystick-knob');
+      let baseCenterX, baseCenterY, maxDist;
+
+      function recalcBase() {
+        const rect = base.getBoundingClientRect();
+        baseCenterX = rect.left + rect.width / 2;
+        baseCenterY = rect.top + rect.height / 2;
+        const knobRect = knob.getBoundingClientRect();
+        maxDist = rect.width / 2 - knobRect.width / 2;
+      }
+
+      function updateKnob(touchX, touchY) {
+        let dx = touchX - baseCenterX;
+        let dy = touchY - baseCenterY;
+        let dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist > maxDist) {
+          dx = (dx / dist) * maxDist;
+          dy = (dy / dist) * maxDist;
+          dist = maxDist;
+        }
+
+        knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+
+        let nx = dx / maxDist;
+        let ny = dy / maxDist;
+        const mag = Math.sqrt(nx * nx + ny * ny);
+        if (mag < DEADZONE) {
+          nx = 0; ny = 0;
+        } else {
+          const remapped = (mag - DEADZONE) / (1 - DEADZONE);
+          nx = (nx / mag) * remapped;
+          ny = (ny / mag) * remapped;
+        }
+        joyX = nx;
+        joyY = ny;
+        throttledSend();
+      }
+
+      // Touch events on zone
+      zone.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        if (joystickActive) return;
+        const t = e.changedTouches[0];
+        joystickActive = true;
+        joystickTouchId = t.identifier;
+        knob.classList.add('active');
+        recalcBase();
+        updateKnob(t.clientX, t.clientY);
+      }, { passive: false });
+
+      zone.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        if (!joystickActive) return;
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          if (e.changedTouches[i].identifier === joystickTouchId) {
+            updateKnob(e.changedTouches[i].clientX, e.changedTouches[i].clientY);
+            return;
+          }
+        }
+      }, { passive: false });
+
+      function endJoystick(e) {
+        e.preventDefault();
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          if (e.changedTouches[i].identifier === joystickTouchId) {
+            joystickActive = false;
+            joystickTouchId = null;
+            knob.classList.remove('active');
+            knob.style.transform = 'translate(-50%, -50%)';
+            joyX = 0; joyY = 0;
+            sendJoystick();
+            return;
+          }
+        }
+      }
+      zone.addEventListener('touchend', endJoystick, { passive: false });
+      zone.addEventListener('touchcancel', endJoystick, { passive: false });
+
+      // Mouse fallback for desktop
+      let mouseDown = false;
+      zone.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        mouseDown = true;
+        knob.classList.add('active');
+        recalcBase();
+        updateKnob(e.clientX, e.clientY);
+      });
+      document.addEventListener('mousemove', (e) => {
+        if (!mouseDown) return;
+        updateKnob(e.clientX, e.clientY);
+      });
+      document.addEventListener('mouseup', () => {
+        if (!mouseDown) return;
+        mouseDown = false;
+        knob.classList.remove('active');
+        knob.style.transform = 'translate(-50%, -50%)';
+        joyX = 0; joyY = 0;
+        sendJoystick();
+      });
+    }
+
+    function throttledSend() {
+      const now = Date.now();
+      if (now - lastSendTime >= SEND_INTERVAL) {
+        lastSendTime = now;
+        sendJoystick();
+      } else if (!sendScheduled) {
+        sendScheduled = true;
+        setTimeout(() => {
+          sendScheduled = false;
+          lastSendTime = Date.now();
+          sendJoystick();
+        }, SEND_INTERVAL - (Date.now() - lastSendTime));
+      }
+    }
+
+    function sendJoystick() {
+      send({ type: 'joystick', x: Math.round(joyX * 100) / 100, y: Math.round(joyY * 100) / 100 });
+    }
+
+    // ── Input ──
+    function initInput() {
+      initJoystick();
+
+      document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+      document.addEventListener('contextmenu', (e) => e.preventDefault());
+
+      // Shoot button (touch + mouse)
+      const shootBtn = document.getElementById('shoot-btn');
+      shootBtn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        shootBtn.classList.add('pressed');
+        onShoot();
+      }, { passive: false });
+      shootBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        shootBtn.classList.remove('pressed');
+      }, { passive: false });
+      shootBtn.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        shootBtn.classList.add('pressed');
+        onShoot();
+      });
+      shootBtn.addEventListener('mouseup', () => shootBtn.classList.remove('pressed'));
+      shootBtn.addEventListener('mouseleave', () => shootBtn.classList.remove('pressed'));
+
+      // Ready button (toggle)
+      document.getElementById('ready-btn').addEventListener('click', () => {
+        const rb = document.getElementById('ready-btn');
+        const isReady = rb.classList.contains('is-ready');
+        if (isReady) {
+          rb.className = 'not-ready';
+          rb.textContent = 'NOT READY';
+          if (ws && ws.readyState === 1) {
+            ws.send(JSON.stringify({ type: 'unready' }));
+          }
+        } else {
+          rb.className = 'is-ready';
+          rb.textContent = 'READY';
+          if (ws && ws.readyState === 1) {
+            ws.send(JSON.stringify({ type: 'ready' }));
+          }
+        }
+        if (navigator.vibrate) navigator.vibrate(50);
+      });
+
+      // Desktop: WASD/arrows for movement, space for shoot
+      const keysDown = {};
+      document.addEventListener('keydown', (e) => {
+        if (e.repeat) return;
+        if (e.code === 'Space') { e.preventDefault(); onShoot(); return; }
+        keysDown[e.code] = true;
+        updateKeyboardJoystick();
+      });
+      document.addEventListener('keyup', (e) => {
+        delete keysDown[e.code];
+        updateKeyboardJoystick();
+      });
+
+      function updateKeyboardJoystick() {
+        let kx = 0, ky = 0;
+        if (keysDown['ArrowLeft']  || keysDown['KeyA']) kx -= 1;
+        if (keysDown['ArrowRight'] || keysDown['KeyD']) kx += 1;
+        if (keysDown['ArrowUp']    || keysDown['KeyW']) ky -= 1;
+        if (keysDown['ArrowDown']  || keysDown['KeyS']) ky += 1;
+        if (kx !== 0 && ky !== 0) { kx *= 0.707; ky *= 0.707; }
+        joyX = kx; joyY = ky;
+        sendJoystick();
+      }
+    }
+
+    // ── Init ──
+    document.addEventListener('DOMContentLoaded', () => {
+      connect();
+      initInput();
+      initUpgradeDots();
+      initUpgradeButtons();
+      renderUpgrades();
+
+      document.getElementById('join-btn').addEventListener('click', () => {
+        const code = document.getElementById('code-input').value.trim();
+        if (code.length === 4) {
+          joinCode = code.toUpperCase();
+          const rawName = document.getElementById('name-input').value.trim().substring(0, 5);
+          playerName = rawName.length > 0 ? rawName.toUpperCase() : null;
+          setError('');
+          setStatus('Joining...');
+          send({ type: 'join', code: joinCode, name: playerName, roomId: roomId });
+        } else {
+          setError('Code must be 4 characters');
+        }
+      });
+
+      document.getElementById('code-input').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') document.getElementById('join-btn').click();
+      });
+
+      document.getElementById('code-input').addEventListener('input', (e) => {
+        e.target.value = e.target.value.toUpperCase();
+      });
+
+      document.getElementById('name-input').addEventListener('input', (e) => {
+        e.target.value = e.target.value.toUpperCase();
+      });
+      document.getElementById('name-input').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') document.getElementById('join-btn').click();
+      });
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && (!ws || ws.readyState !== WebSocket.OPEN)) {
+          reconAttempts = 0;
+          connect();
+        }
+      });
+    });
+  </script>
+</body>
+</html>
