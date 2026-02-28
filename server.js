@@ -88,7 +88,7 @@ function createRoom(roomId) {
 
 function checkRoomCleanup(room) {
   const hasGameScreens = room.gameScreens.length > 0;
-  const hasPlayers = room.players.some(p => p.connected);
+  const hasPlayers = room.players.some(p => p.connected && !p.isBot);
   if (!hasGameScreens && !hasPlayers) {
     if (room.gameLoopInterval) clearInterval(room.gameLoopInterval);
     rooms.delete(room.id);
