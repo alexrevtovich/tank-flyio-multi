@@ -624,7 +624,7 @@ function startGame(room) {
   console.log(`Room ${room.id}: Game started!`);
 
   if (room.gameLoopInterval) clearInterval(room.gameLoopInterval);
-  room.gameLoopInterval = setInterval(() => gameLoop(room), 1000 / 60);
+  room.gameLoopInterval = setInterval(() => gameLoop(room), 1000 / 45);
 }
 
 function restartRound(room) {
@@ -640,7 +640,7 @@ function restartRound(room) {
   console.log(`Room ${room.id}: Round restarted!`);
 
   if (room.gameLoopInterval) clearInterval(room.gameLoopInterval);
-  room.gameLoopInterval = setInterval(() => gameLoop(room), 1000 / 60);
+  room.gameLoopInterval = setInterval(() => gameLoop(room), 1000 / 45);
 }
 
 function pauseGame(room) {
