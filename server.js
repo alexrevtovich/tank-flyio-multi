@@ -210,6 +210,26 @@ const MIME = {
 
 const server = http.createServer((req, res) => {
   let urlPath = req.url.split('?')[0];
+
+  if (urlPath === '/api/rooms') {
+    const data = [];
+    for (const [id, room] of rooms) {
+      const players = room.players.map(p => ({
+        id: p.id, name: p.name, connected: p.connected, isBot: p.isBot || false
+      }));
+      data.push({
+        id,
+        gameRunning: room.gameRunning,
+        playerCount: room.playerCount,
+        screens: room.gameScreens.length,
+        players
+      });
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    res.end(JSON.stringify(data, null, 2));
+    return;
+  }
+
   if (urlPath === '/') urlPath = '/index.html';
 
   const filePath = path.join(__dirname, 'public', urlPath);
