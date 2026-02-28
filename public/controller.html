@@ -367,9 +367,9 @@
   <div id="join" class="screen active">
     <div class="join-box">
       <h1>JOIN</h1>
-      <p>Enter your 4-character code</p>
-      <input type="text" id="code-input" maxlength="4" autocomplete="off"
-             inputmode="text" autocapitalize="characters" placeholder="CODE" spellcheck="false">
+      <p>What is your player number?</p>
+      <input type="text" id="code-input" maxlength="1" autocomplete="off"
+             inputmode="numeric" placeholder="#" spellcheck="false">
       <input type="text" id="name-input" maxlength="5" autocomplete="off"
              inputmode="text" autocapitalize="characters" placeholder="NAME" spellcheck="false">
       <button id="join-btn">JOIN</button>
@@ -972,7 +972,7 @@
 
       document.getElementById('join-btn').addEventListener('click', () => {
         const code = document.getElementById('code-input').value.trim();
-        if (code.length === 4) {
+        if (code.length >= 1) {
           joinCode = code.toUpperCase();
           const rawName = document.getElementById('name-input').value.trim().substring(0, 5);
           playerName = rawName.length > 0 ? rawName.toUpperCase() : null;
@@ -980,7 +980,7 @@
           setStatus('Joining...');
           send({ type: 'join', code: joinCode, name: playerName, roomId: roomId });
         } else {
-          setError('Code must be 4 characters');
+          setError('Enter your player number');
         }
       });
 
