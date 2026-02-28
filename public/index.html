@@ -1261,7 +1261,13 @@
     }
 
     // ── WebSocket ──
-    let pendingRoomAction = null; // { action: 'create' } or { action: 'join', roomId: 'XXXX' }
+    let pendingRoomId = null; // room ID to send on connect/reconnect
+
+    function connectToRoom(roomId) {
+      pendingRoomId = roomId;
+      if (ws) { try { ws.close(); } catch {} }
+      connect();
+    }
 
     function connect() {
       const url = (window.WS_URL || ((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host));
@@ -1269,13 +1275,10 @@
 
       ws.onopen = () => {
         document.getElementById('status-text').textContent = 'Connected';
-        if (pendingRoomAction) {
-          const roomId = pendingRoomAction.roomId || null;
-          ws.send(JSON.stringify({ type: 'register_game', roomId }));
-          pendingRoomAction = null;
-        } else if (currentRoomId) {
-          // Reconnect to existing room
-          ws.send(JSON.stringify({ type: 'register_game', roomId: currentRoomId }));
+        // Always register with the room we're targeting
+        const roomId = currentRoomId || pendingRoomId;
+        if (roomId !== null || pendingRoomId !== undefined) {
+          ws.send(JSON.stringify({ type: 'register_game', roomId: roomId }));
         }
       };
 
@@ -1497,8 +1500,12 @@
       };
 
       ws.onclose = () => {
-        document.getElementById('status-text').textContent = 'Disconnected — reconnecting...';
-        setTimeout(connect, 1000);
+        document.getElementById('status-text').textContent = 'Disconnected';
+        // Only auto-reconnect if we're already in a room
+        if (currentRoomId) {
+          document.getElementById('status-text').textContent = 'Disconnected — reconnecting...';
+          setTimeout(connect, 1000);
+        }
       };
     }
 
@@ -1704,14 +1711,8 @@
 
     // ── Room picker ──
     document.getElementById('create-room-btn').addEventListener('click', () => {
-      pendingRoomAction = { action: 'create', roomId: null };
       document.getElementById('room-error').textContent = '';
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'register_game', roomId: null }));
-        pendingRoomAction = null;
-      } else {
-        connect();
-      }
+      connectToRoom(null); // null = server generates room ID
     });
 
     document.getElementById('join-room-btn').addEventListener('click', () => {
@@ -1720,14 +1721,8 @@
         document.getElementById('room-error').textContent = 'Enter a 4-character room code';
         return;
       }
-      pendingRoomAction = { action: 'join', roomId };
       document.getElementById('room-error').textContent = '';
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'register_game', roomId }));
-        pendingRoomAction = null;
-      } else {
-        connect();
-      }
+      connectToRoom(roomId);
     });
 
     document.getElementById('room-id-input').addEventListener('input', (e) => {
@@ -1737,18 +1732,18 @@
       if (e.key === 'Enter') document.getElementById('join-room-btn').click();
     });
 
-    // Check URL for ?room=XXXX (auto-join)
+    // Check URL for ?room=XXXX (auto-join as spectator)
     const urlParams = new URLSearchParams(window.location.search);
     const urlRoom = urlParams.get('room');
-    if (urlRoom) {
-      pendingRoomAction = { action: 'join', roomId: urlRoom.toUpperCase() };
-    }
 
     // ── Initial draw ──
     draw();
 
     // ── Connect ──
-    connect();
+    // Only auto-connect if URL has ?room= parameter; otherwise wait for user action
+    if (urlRoom) {
+      connectToRoom(urlRoom.toUpperCase());
+    }
 
     // Unlock ALL audio on first user interaction (browsers block autoplay)
     let audioUnlocked = false;
