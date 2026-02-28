@@ -1,10 +1,10 @@
-# fly.toml app configuration file generated for avr-tanks on 2026-02-28T06:43:59Z
+# fly.toml app configuration file generated for tank-flyio-multi on 2026-02-28T08:06:03Z
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'avr-tanks-multi'
-primary_region = 'iad'
+app = 'tank-flyio-multi'
+primary_region = 'dfw'
 
 [build]
 
@@ -17,18 +17,7 @@ primary_region = 'iad'
   processes = ['app']
 
 [[vm]]
-  memory = '256mb'
+  memory = '1gb'
   cpu_kind = 'shared'
   cpus = 1
   memory_mb = 256
-
-[processes]
-  app = "node server.js"
-
-[checks]
-  [checks.health]
-    type = "http"
-    port = 8080
-    path = "/"
-    interval = "30s"
-    timeout = "5s"
