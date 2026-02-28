@@ -748,7 +748,7 @@ function gameLoop(room) {
     if (!p.alive) continue;
     const input = room.inputState[p.id];
     const engineBonus = (room.playerUpgrades[p.id] ? room.playerUpgrades[p.id].engine : 0) * 0.02;
-    const spd = (p.isBot ? SPEED * 0.7 : SPEED) * (1 + engineBonus);
+    const spd = (p.isBot ? 1.8 : SPEED) * (1 + engineBonus);
     let dx = input.x * spd;
     let dy = input.y * spd;
 
