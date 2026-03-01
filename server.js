@@ -1004,13 +1004,14 @@ function gameLoop(room) {
         const nx = dx / nLen, ny = dy / nLen;
         // Incoming direction (reversed projectile velocity)
         const projSpeed = Math.sqrt(proj.dx * proj.dx + proj.dy * proj.dy);
+        if (projSpeed < 0.01) { /* dead projectile */ room.projectiles[id] = null; hitPlayer = true; break; }
         const inX = -proj.dx / projSpeed, inY = -proj.dy / projSpeed;
         // Angle of incidence: angle between incoming dir and surface normal
         const cosAngle = nx * inX + ny * inY;
 
-        // Ricochet: angle > 60° from normal (< 30° from surface), but NOT rear hits
+        // Ricochet: angle > 50° from normal (< 40° from surface), but NOT rear hits
         const isRear = relAngle <= Math.PI * 0.25;
-        if (!isRear && cosAngle < 0.5) {
+        if (!isRear && cosAngle < 0.6428) { // cos(50°) ≈ 0.6428
           // Ricochet — reflect projectile off surface normal
           const dot2 = 2 * (proj.dx * nx + proj.dy * ny);
           proj.dx = proj.dx - dot2 * nx;
