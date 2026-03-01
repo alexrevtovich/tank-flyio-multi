@@ -575,7 +575,8 @@ function tryShoot(room, playerId) {
     dx: dir.dx * PROJECTILE_SPEED,
     dy: dir.dy * PROJECTILE_SPEED,
     ownerId: playerId,
-    lastRicochetId: null
+    lastRicochetId: null,
+    createdAt: now
   };
 
   room.frameShotsFired.push(playerId);
@@ -937,6 +938,7 @@ function gameLoop(room) {
 
   const frameHits = [];
   const frameDestructHits = [];
+  const now = Date.now();
   for (const p of room.players) {
     const id = p.id;
     const proj = room.projectiles[id];
@@ -944,6 +946,12 @@ function gameLoop(room) {
 
     proj.x += proj.dx;
     proj.y += proj.dy;
+
+    if (now - proj.createdAt >= 2000) {
+      frameHits.push({ x: Math.round(proj.x), y: Math.round(proj.y), hitType: 'wall' });
+      room.projectiles[id] = null;
+      continue;
+    }
 
     if (proj.x < 0 || proj.x > CANVAS_W || proj.y < 0 || proj.y > CANVAS_H) {
       frameHits.push({
