@@ -250,88 +250,6 @@
     }
 
     /* ── Upgrade panel ── */
-    #upgrade-panel {
-      width: 90%;
-      max-width: 400px;
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 12px;
-      padding: 10px 14px;
-    }
-    #upgrade-title {
-      text-align: center;
-      font-size: 14px;
-      font-weight: 700;
-      letter-spacing: 2px;
-      margin-bottom: 8px;
-      color: rgba(255,255,255,0.85);
-    }
-    .upgrade-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 6px;
-      height: 32px;
-    }
-    .upgrade-row:last-child { margin-bottom: 0; }
-    .upgrade-label {
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: 1px;
-      width: 70px;
-      color: rgba(255,255,255,0.7);
-    }
-    .upgrade-dots {
-      display: flex;
-      gap: 4px;
-      flex: 1;
-      justify-content: center;
-    }
-    .upgrade-dot {
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      border: 2px solid rgba(255,255,255,0.3);
-      background: transparent;
-      transition: background 0.15s;
-    }
-    .upgrade-dot.filled {
-      background: #4CAF50;
-      border-color: #4CAF50;
-    }
-    .upgrade-minus, .upgrade-plus {
-      width: 32px;
-      height: 32px;
-      border-radius: 8px;
-      border: none;
-      font-size: 18px;
-      font-weight: 800;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #fff;
-      transition: opacity 0.15s;
-    }
-    .upgrade-minus {
-      background: rgba(220,40,40,0.6);
-      margin-right: 6px;
-    }
-    .upgrade-plus {
-      background: rgba(76,175,80,0.6);
-      margin-left: 6px;
-    }
-    .upgrade-minus:disabled, .upgrade-plus:disabled {
-      opacity: 0.25;
-      cursor: default;
-    }
-    #upgrade-remaining {
-      text-align: center;
-      font-size: 11px;
-      color: rgba(255,255,255,0.5);
-      margin-top: 6px;
-    }
-
     /* ── Motion permission button ── */
     #motion-permission {
       display: none;
@@ -392,28 +310,6 @@
       <button id="shoot-btn">FIRE</button>
     </div>
     <div id="ready-screen">
-      <div id="upgrade-panel">
-        <div id="upgrade-title">UPGRADES (3 pts)</div>
-        <div class="upgrade-row" data-key="armour">
-          <button class="upgrade-minus" data-key="armour">&minus;</button>
-          <span class="upgrade-label">ARMOUR</span>
-          <div class="upgrade-dots" id="dots-armour"></div>
-          <button class="upgrade-plus" data-key="armour">+</button>
-        </div>
-        <div class="upgrade-row" data-key="engine">
-          <button class="upgrade-minus" data-key="engine">&minus;</button>
-          <span class="upgrade-label">ENGINE</span>
-          <div class="upgrade-dots" id="dots-engine"></div>
-          <button class="upgrade-plus" data-key="engine">+</button>
-        </div>
-        <div class="upgrade-row" data-key="repair">
-          <button class="upgrade-minus" data-key="repair">&minus;</button>
-          <span class="upgrade-label">REPAIR</span>
-          <div class="upgrade-dots" id="dots-repair"></div>
-          <button class="upgrade-plus" data-key="repair">+</button>
-        </div>
-        <div id="upgrade-remaining">0 points remaining</div>
-      </div>
       <button id="ready-btn" class="not-ready">NOT READY</button>
     </div>
   </div>
@@ -452,71 +348,11 @@
       a.currentTime = 0; a.play().catch(() => {});
     }
 
-    // ── Upgrade State ──
-    const UPGRADE_MAX = { armour: 5, engine: 5, repair: 3 };
-    let upgradeState = { armour: 0, engine: 0, repair: 0 };
-    let upgradePointsTotal = 3;
-
-    function initUpgradeDots() {
-      for (const key of ['armour', 'engine', 'repair']) {
-        const container = document.getElementById('dots-' + key);
-        container.innerHTML = '';
-        const max = UPGRADE_MAX[key];
-        for (let i = 0; i < max; i++) {
-          const dot = document.createElement('div');
-          dot.className = 'upgrade-dot';
-          container.appendChild(dot);
-        }
-      }
-    }
-
-    function renderUpgrades() {
-      const spent = upgradeState.armour + upgradeState.engine + upgradeState.repair;
-      const remaining = upgradePointsTotal - spent;
-      document.getElementById('upgrade-title').textContent = 'UPGRADES (' + upgradePointsTotal + ' pts)';
-      document.getElementById('upgrade-remaining').textContent = remaining + ' point' + (remaining !== 1 ? 's' : '') + ' remaining';
-
-      for (const key of ['armour', 'engine', 'repair']) {
-        const dots = document.getElementById('dots-' + key).children;
-        for (let i = 0; i < dots.length; i++) {
-          dots[i].classList.toggle('filled', i < upgradeState[key]);
-        }
-        // Disable buttons appropriately
-        const minusBtn = document.querySelector('.upgrade-minus[data-key="' + key + '"]');
-        const plusBtn = document.querySelector('.upgrade-plus[data-key="' + key + '"]');
-        minusBtn.disabled = upgradeState[key] <= 0;
-        plusBtn.disabled = remaining <= 0 || upgradeState[key] >= UPGRADE_MAX[key];
-      }
-    }
-
-    function sendUpgrades() {
-      send({ type: 'set_upgrades', armour: upgradeState.armour, engine: upgradeState.engine, repair: upgradeState.repair });
-    }
-
-    function initUpgradeButtons() {
-      document.querySelectorAll('.upgrade-plus').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const key = btn.getAttribute('data-key');
-          const spent = upgradeState.armour + upgradeState.engine + upgradeState.repair;
-          if (spent < upgradePointsTotal && upgradeState[key] < UPGRADE_MAX[key]) {
-            upgradeState[key]++;
-            renderUpgrades();
-            sendUpgrades();
-            if (navigator.vibrate) navigator.vibrate(30);
-          }
-        });
-      });
-      document.querySelectorAll('.upgrade-minus').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const key = btn.getAttribute('data-key');
-          if (upgradeState[key] > 0) {
-            upgradeState[key]--;
-            renderUpgrades();
-            sendUpgrades();
-            if (navigator.vibrate) navigator.vibrate(30);
-          }
-        });
-      });
+    const pickupSFX = new Audio('/sound/sfx/Michael.mp3');
+    pickupSFX.volume = 0.6;
+    function playPickupSound() {
+      pickupSFX.currentTime = 0;
+      pickupSFX.play().catch(() => {});
     }
 
     // ── Shake Detection ──
@@ -669,17 +505,12 @@
             break;
 
           case 'round_over':
-            // Show ready button + upgrades, hide controls
             document.getElementById('controls').style.display = 'none';
             document.getElementById('shoot-status').style.display = 'none';
             const rb = document.getElementById('ready-btn');
             rb.className = 'not-ready';
             rb.textContent = 'NOT READY';
             rb.disabled = false;
-            // Reset upgrade selections with new budget
-            upgradePointsTotal = msg.upgradePoints || 3;
-            upgradeState = { armour: 0, engine: 0, repair: 0 };
-            renderUpgrades();
             document.getElementById('ready-screen').classList.add('show');
             break;
           case 'score_update':
@@ -692,6 +523,10 @@
             if (msg.action === 'vibrate') {
               if (navigator.vibrate) navigator.vibrate(msg.duration || 100);
               playScream();
+            }
+            if (msg.action === 'pickup') {
+              playPickupSound();
+              if (navigator.vibrate) navigator.vibrate([50, 30, 50, 30, 50]);
             }
             if (msg.action === 'hit_confirm') {
               const ss = document.getElementById('shoot-status');
@@ -966,9 +801,6 @@
     document.addEventListener('DOMContentLoaded', () => {
       connect();
       initInput();
-      initUpgradeDots();
-      initUpgradeButtons();
-      renderUpgrades();
 
       document.getElementById('join-btn').addEventListener('click', () => {
         const code = document.getElementById('code-input').value.trim();

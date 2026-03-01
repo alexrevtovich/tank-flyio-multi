@@ -380,6 +380,8 @@
     let playerNames = {};  // { playerId: 'NAME' }
     let projectiles = [];  // [{ x, y, owner }, ...]
     let walls = [];
+    let pickups = [];
+    let playerPickups = {};
     let gameActive = false;
     let currentRoomId = null;  // room code assigned by server
     let isOwner = false;
@@ -435,6 +437,7 @@
     const playShotSFX      = createSFXPool('/sound/sfx/Shot.mp3', 6, 0.3);
     const playExplosionSFX = createSFXPool('/sound/sfx/Explosion.mp3', 6, 0.4);
     const playWallHitSFX   = createSFXPool('/sound/sfx/hit_wall.mp3', 6, 0.3);
+    const playPickupSFX    = createSFXPool('/sound/sfx/Michael.mp3', 3, 0.5);
 
     // Explosion animation
     const EXPLOSION_FRAMES = 7;
@@ -1360,6 +1363,8 @@
             }
             dustParticles = [];
             smokeParticles = [];
+            pickups = [];
+            playerPickups = {};
             prevPositions = {};
             dustSpawnTimer = {};
             smokeSpawnTimer = {};
@@ -1402,23 +1407,13 @@
 
           case 'ready_update': {
             const rs = msg.readyState || {};
-            const pu = msg.playerUpgrades || {};
             const parts = [];
             for (const p of playerData) {
               const name = playerNames[p.id] || ('P' + p.id);
-              let upgStr = '';
-              if (pu[p.id]) {
-                const u = pu[p.id];
-                const tags = [];
-                if (u.armour) tags.push('A' + u.armour);
-                if (u.engine) tags.push('E' + u.engine);
-                if (u.repair) tags.push('R' + u.repair);
-                if (tags.length) upgStr = ' [' + tags.join(' ') + ']';
-              }
               if (rs[p.id]) {
-                parts.push('<span class="ready">' + name + ': Ready' + upgStr + '</span>');
+                parts.push('<span class="ready">' + name + ': Ready</span>');
               } else {
-                parts.push('<span class="not-ready">' + name + ': Not Ready' + upgStr + '</span>');
+                parts.push('<span class="not-ready">' + name + ': Not Ready</span>');
               }
             }
             document.getElementById('ready-status').innerHTML = parts.join('&nbsp;&nbsp;|&nbsp;&nbsp;');
@@ -1434,9 +1429,15 @@
               'Player disconnected — waiting for reconnect...';
             break;
 
+          case 'pickup_collected':
+            playPickupSFX();
+            break;
+
           case 'frame': {
             playerData = msg.players;
             projectiles = msg.projectiles || [];
+            pickups = msg.pickups || [];
+            playerPickups = msg.playerPickups || {};
             // Update name cache from frame data
             for (const p of playerData) {
               if (p.name) playerNames[p.id] = p.name;
@@ -1570,6 +1571,11 @@
         ctx.drawImage(destructCanvas, 0, 0);
       }
 
+      // Draw pickups
+      for (const pickup of pickups) {
+        drawPickup(pickup);
+      }
+
       // Draw dust particles (behind tanks)
       {
         const now = Date.now();
@@ -1672,6 +1678,69 @@
       ctx.stroke();
     }
 
+    function drawPickup(pickup) {
+      const x = pickup.x, y = pickup.y, r = 15;
+      const pulse = 1 + 0.15 * Math.sin(Date.now() / 200);
+      const glowR = r * 1.8 * pulse;
+
+      let baseColor, glowColor;
+      if (pickup.type === 'heal') {
+        baseColor = 'rgba(220, 40, 40, 0.85)';
+        glowColor = 'rgba(255, 60, 60, 0.3)';
+      } else if (pickup.type === 'speed') {
+        baseColor = 'rgba(220, 200, 40, 0.85)';
+        glowColor = 'rgba(255, 240, 60, 0.3)';
+      } else {
+        baseColor = 'rgba(80, 120, 200, 0.85)';
+        glowColor = 'rgba(100, 150, 255, 0.3)';
+      }
+
+      // Glow
+      const grad = ctx.createRadialGradient(x, y, 0, x, y, glowR);
+      grad.addColorStop(0, glowColor);
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.beginPath();
+      ctx.arc(x, y, glowR, 0, Math.PI * 2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // Circle
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fillStyle = baseColor;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Icon
+      ctx.fillStyle = '#fff';
+      if (pickup.type === 'heal') {
+        ctx.fillRect(x - 2, y - 7, 4, 14);
+        ctx.fillRect(x - 7, y - 2, 14, 4);
+      } else if (pickup.type === 'speed') {
+        ctx.beginPath();
+        ctx.moveTo(x + 2, y - 9);
+        ctx.lineTo(x - 4, y + 1);
+        ctx.lineTo(x, y + 1);
+        ctx.lineTo(x - 2, y + 9);
+        ctx.lineTo(x + 4, y - 1);
+        ctx.lineTo(x, y - 1);
+        ctx.closePath();
+        ctx.fill();
+      } else {
+        ctx.beginPath();
+        ctx.moveTo(x, y - 8);
+        ctx.lineTo(x + 7, y - 4);
+        ctx.lineTo(x + 7, y + 2);
+        ctx.quadraticCurveTo(x + 5, y + 8, x, y + 10);
+        ctx.quadraticCurveTo(x - 5, y + 8, x - 7, y + 2);
+        ctx.lineTo(x - 7, y - 4);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+
     function drawPlayer(p) {
       const colorIdx = p.id - 1;
       const color = PLAYER_HEX_COLORS[colorIdx] || '#fff';
@@ -1730,6 +1799,36 @@
       ctx.textBaseline = 'middle';
       const tankLabel = playerNames[p.id] || ('P' + p.id);
       ctx.fillText(tankLabel + ': ' + p.score, p.x, p.y + TANK_DISPLAY / 2 + 10);
+
+      // Pickup indicators
+      if (playerPickups[p.id]) {
+        const pp = playerPickups[p.id];
+        let dotIdx = 0;
+        const dotY = p.y + TANK_DISPLAY / 2 + 20;
+        const dotR = 3;
+        const dotSpacing = 9;
+        const dotStartX = p.x - 9;
+        if (pp.speed) {
+          ctx.beginPath();
+          ctx.arc(dotStartX + dotIdx * dotSpacing, dotY, dotR, 0, Math.PI * 2);
+          ctx.fillStyle = '#DDDD44';
+          ctx.fill();
+          dotIdx++;
+        }
+        if (pp.armour) {
+          ctx.beginPath();
+          ctx.arc(dotStartX + dotIdx * dotSpacing, dotY, dotR, 0, Math.PI * 2);
+          ctx.fillStyle = '#4488FF';
+          ctx.fill();
+          dotIdx++;
+        }
+        if (pp.heal) {
+          ctx.fillStyle = '#FF4444';
+          const cx2 = dotStartX + dotIdx * dotSpacing;
+          ctx.fillRect(cx2 - 1, dotY - 3, 2, 6);
+          ctx.fillRect(cx2 - 3, dotY - 1, 6, 2);
+        }
+      }
     }
 
     // ── Room picker ──

@@ -48,6 +48,9 @@ const ARMOUR_REAR = 0;
 const HEAL_PER_SEC = 1;
 const HEAL_DURATION = 10000;
 const HEAL_COOLDOWN = 3000;
+const PICKUP_RADIUS = 15;
+const PICKUP_INTERVAL = 20000;
+const PICKUP_TYPES = ['speed', 'armour', 'heal'];
 
 // ── Rooms ──
 const rooms = new Map();
@@ -67,8 +70,11 @@ function createRoom(roomId) {
     botPlayerIds: new Set(),
     botState: {},
     readyState: {},
-    playerUpgrades: {},
-    upgradePointsBudget: {},
+    pickups: [],
+    playerPickups: {},
+    lastPickupSpawnTime: 0,
+    nextPickupTypeIndex: 0,
+    pickupIdCounter: 0,
     walls: [],
     destructibles: [],
     bgSeed: 0,
@@ -147,6 +153,10 @@ function initPlayers(room, count) {
     }
   }
   room.botPlayerIds = new Set([...room.botPlayerIds].filter(id => id <= count));
+  room.playerPickups = {};
+  for (let i = 0; i < count; i++) {
+    room.playerPickups[i + 1] = { speed: false, armour: false, heal: false };
+  }
 }
 
 // ── Wall obstacles ──
@@ -460,7 +470,7 @@ function handleWSConnection(ws) {
           const hs = room.healState[assignedRole];
           if (healer && healer.alive && !hs.active) {
             const now = Date.now();
-            const repairBonus = (room.playerUpgrades[assignedRole] ? room.playerUpgrades[assignedRole].repair : 0) * 1000;
+            const repairBonus = (room.playerPickups[assignedRole] && room.playerPickups[assignedRole].heal) ? 3000 : 0;
             if (now - hs.endTime >= HEAL_COOLDOWN - repairBonus) {
               hs.active = true;
               hs.startTime = now;
@@ -483,7 +493,7 @@ function handleWSConnection(ws) {
           const room = assignedRoom;
           room.readyState[assignedRole] = true;
           console.log(`Room ${room.id}: Player ${assignedRole} is ready`);
-          sendToGame(room, { type: 'ready_update', readyState: room.readyState, playerUpgrades: room.playerUpgrades });
+          sendToGame(room, { type: 'ready_update', readyState: room.readyState });
           const allReady = room.players.every(p => room.readyState[p.id]);
           if (allReady) {
             console.log(`Room ${room.id}: All players ready — starting next round`);
@@ -497,22 +507,7 @@ function handleWSConnection(ws) {
           const room = assignedRoom;
           room.readyState[assignedRole] = false;
           console.log(`Room ${room.id}: Player ${assignedRole} is not ready`);
-          sendToGame(room, { type: 'ready_update', readyState: room.readyState, playerUpgrades: room.playerUpgrades });
-        }
-        break;
-
-      case 'set_upgrades':
-        if (typeof assignedRole === 'number' && assignedRoom && !assignedRoom.gameRunning) {
-          const room = assignedRoom;
-          const budget = room.upgradePointsBudget[assignedRole] || 3;
-          const a = Math.max(0, Math.min(5, parseInt(msg.armour) || 0));
-          const en = Math.max(0, Math.min(5, parseInt(msg.engine) || 0));
-          const r = Math.max(0, Math.min(3, parseInt(msg.repair) || 0));
-          if (a + en + r <= budget) {
-            room.playerUpgrades[assignedRole] = { armour: a, engine: en, repair: r };
-            console.log(`Room ${room.id}: Player ${assignedRole} upgrades: armour=${a} engine=${en} repair=${r}`);
-            sendToGame(room, { type: 'ready_update', readyState: room.readyState, playerUpgrades: room.playerUpgrades });
-          }
+          sendToGame(room, { type: 'ready_update', readyState: room.readyState });
         }
         break;
     }
@@ -609,6 +604,13 @@ function resetRound(room, resetScores) {
   room.walls = generateWalls();
   room.destructibles = generateDestructibles();
   room.bgSeed = 1 + Math.floor(Math.random() * 999999);
+  room.pickups = [];
+  room.lastPickupSpawnTime = 0;
+  room.nextPickupTypeIndex = 0;
+  room.pickupIdCounter = 0;
+  for (const p of room.players) {
+    room.playerPickups[p.id] = { speed: false, armour: false, heal: false };
+  }
 }
 
 function startGame(room) {
@@ -741,14 +743,88 @@ function updateBotAI(room) {
   }
 }
 
+function spawnPickup(room) {
+  if (room.pickups.length > 0) return;
+  const now = Date.now();
+  if (room.lastPickupSpawnTime === 0) room.lastPickupSpawnTime = room.gameStartTime;
+  if (now - room.lastPickupSpawnTime < PICKUP_INTERVAL) return;
+
+  const alivePlayers = room.players.filter(p => p.alive);
+  if (alivePlayers.length < 2) return;
+
+  let cx = 0, cy = 0;
+  for (const p of alivePlayers) { cx += p.x; cy += p.y; }
+  cx /= alivePlayers.length;
+  cy /= alivePlayers.length;
+
+  let bestX = cx, bestY = cy, bestMinDist = 0;
+  const candidates = [{ x: cx, y: cy }];
+  for (let a = 0; a < 8; a++) {
+    const angle = (Math.PI * 2 * a) / 8;
+    for (const r of [100, 200, 300]) {
+      const px = cx + Math.cos(angle) * r;
+      const py = cy + Math.sin(angle) * r;
+      if (px > 30 && px < CANVAS_W - 30 && py > 30 && py < CANVAS_H - 30) {
+        candidates.push({ x: px, y: py });
+      }
+    }
+  }
+
+  for (const cand of candidates) {
+    let minDist = Infinity;
+    for (const p of alivePlayers) {
+      const dx = cand.x - p.x, dy = cand.y - p.y;
+      minDist = Math.min(minDist, Math.sqrt(dx * dx + dy * dy));
+    }
+    let blocked = false;
+    for (const wall of room.walls) {
+      const local = toWallLocal(cand.x, cand.y, wall);
+      if (Math.abs(local.x) < wall.w / 2 + PICKUP_RADIUS && Math.abs(local.y) < wall.h / 2 + PICKUP_RADIUS) {
+        blocked = true; break;
+      }
+    }
+    if (!blocked && minDist > bestMinDist) {
+      bestMinDist = minDist;
+      bestX = cand.x;
+      bestY = cand.y;
+    }
+  }
+
+  const type = PICKUP_TYPES[room.nextPickupTypeIndex % PICKUP_TYPES.length];
+  room.nextPickupTypeIndex++;
+  room.pickupIdCounter++;
+  room.pickups.push({ id: room.pickupIdCounter, type, x: Math.round(bestX), y: Math.round(bestY) });
+  room.lastPickupSpawnTime = now;
+  console.log(`Room ${room.id}: Spawned ${type} pickup at (${Math.round(bestX)}, ${Math.round(bestY)})`);
+}
+
+function checkPickupCollisions(room) {
+  for (let i = room.pickups.length - 1; i >= 0; i--) {
+    const pickup = room.pickups[i];
+    for (const p of room.players) {
+      if (!p.alive) continue;
+      const dx = p.x - pickup.x, dy = p.y - pickup.y;
+      if (Math.sqrt(dx * dx + dy * dy) < RADIUS + PICKUP_RADIUS) {
+        if (room.playerPickups[p.id][pickup.type]) continue;
+        room.playerPickups[p.id][pickup.type] = true;
+        room.pickups.splice(i, 1);
+        console.log(`Room ${room.id}: Player ${p.id} picked up ${pickup.type}`);
+        sendToPlayer(room, p.id, { type: 'feedback', action: 'pickup', pickupType: pickup.type });
+        sendToGame(room, { type: 'pickup_collected', playerId: p.id, pickupType: pickup.type, pickupId: pickup.id });
+        break;
+      }
+    }
+  }
+}
+
 function gameLoop(room) {
   updateBotAI(room);
 
   for (const p of room.players) {
     if (!p.alive) continue;
     const input = room.inputState[p.id];
-    const engineBonus = (room.playerUpgrades[p.id] ? room.playerUpgrades[p.id].engine : 0) * 0.02;
-    const spd = (p.isBot ? 1.8 : SPEED) * (1 + engineBonus);
+    const speedMult = (room.playerPickups[p.id] && room.playerPickups[p.id].speed) ? 1.3 : 1.0;
+    const spd = (p.isBot ? 1.8 : SPEED) * speedMult;
     let dx = input.x * spd;
     let dy = input.y * spd;
 
@@ -835,6 +911,9 @@ function gameLoop(room) {
     }
   }
 
+  spawnPickup(room);
+  checkPickupCollisions(room);
+
   const healNow = Date.now();
   for (const p of room.players) {
     if (!p.alive) continue;
@@ -917,7 +996,7 @@ function gameLoop(room) {
         const faceAngle = Math.atan2(tFace.dy, tFace.dx);
         let relAngle = Math.abs(projAngle - faceAngle);
         if (relAngle > Math.PI) relAngle = 2 * Math.PI - relAngle;
-        const armourUpgrade = (room.playerUpgrades[target.id] ? room.playerUpgrades[target.id].armour : 0);
+        const armourUpgrade = (room.playerPickups[target.id] && room.playerPickups[target.id].armour) ? 5 : 0;
         let armour;
         if (relAngle >= Math.PI * 0.75) {
           armour = ARMOUR_FRONT + armourUpgrade;
@@ -954,7 +1033,7 @@ function gameLoop(room) {
     const frame = {
       type: 'frame',
       players: room.players.map(pl => {
-        const repairB = (room.playerUpgrades[pl.id] ? room.playerUpgrades[pl.id].repair : 0) * 1000;
+        const repairB = (room.playerPickups[pl.id] && room.playerPickups[pl.id].heal) ? 3000 : 0;
         return {
           id: pl.id, name: pl.name, x: Math.round(pl.x), y: Math.round(pl.y),
           fdx: room.facing[pl.id].dx, fdy: room.facing[pl.id].dy,
@@ -966,7 +1045,9 @@ function gameLoop(room) {
       projectiles: [],
       hits: frameHits,
       destructHits: frameDestructHits,
-      shots: room.frameShotsFired
+      shots: room.frameShotsFired,
+      pickups: room.pickups,
+      playerPickups: room.playerPickups
     };
     sendToGame(room, frame);
     room.frameShotsFired = [];
@@ -985,19 +1066,14 @@ function gameLoop(room) {
     sendToGame(room, { type: 'game_over', winnerId: winner ? winner.id : null, scores, names });
 
     for (const pl of room.players) {
-      room.playerUpgrades[pl.id] = { armour: 0, engine: 0, repair: 0 };
-      room.upgradePointsBudget[pl.id] = (winner && pl.id === winner.id) ? 5 : 3;
-    }
-
-    for (const pl of room.players) {
       sendToPlayer(room, pl.id, { type: 'score_update', scores });
-      sendToPlayer(room, pl.id, { type: 'round_over', upgradePoints: room.upgradePointsBudget[pl.id] });
+      sendToPlayer(room, pl.id, { type: 'round_over' });
     }
 
     for (const pl of room.players) {
       room.readyState[pl.id] = pl.isBot ? true : false;
     }
-    sendToGame(room, { type: 'ready_update', readyState: room.readyState, playerUpgrades: room.playerUpgrades });
+    sendToGame(room, { type: 'ready_update', readyState: room.readyState });
 
     return;
   }
@@ -1006,7 +1082,7 @@ function gameLoop(room) {
   const frame = {
     type: 'frame',
     players: room.players.map(p => {
-      const repairB = (room.playerUpgrades[p.id] ? room.playerUpgrades[p.id].repair : 0) * 1000;
+      const repairB = (room.playerPickups[p.id] && room.playerPickups[p.id].heal) ? 3000 : 0;
       return {
         id: p.id,
         name: p.name,
@@ -1024,7 +1100,9 @@ function gameLoop(room) {
     projectiles: [],
     hits: frameHits,
     destructHits: frameDestructHits,
-    shots: room.frameShotsFired
+    shots: room.frameShotsFired,
+    pickups: room.pickups,
+    playerPickups: room.playerPickups
   };
 
   for (const p of room.players) {
