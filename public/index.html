@@ -444,6 +444,9 @@
     const EXPLOSION_DISPLAY = 64;     // drawn size on canvas
     const EXPLOSION_FPS = 12;
     let explosions = []; // { x, y, frame, lastTick }
+    let ricochets = [];  // { x, y, frame, lastTick } — small spark effect
+    const RICOCHET_FRAMES = 5;
+    const RICOCHET_FPS = 20;
     const explosionImg = new Image();
     explosionImg.src = '/images/effects/explosion.png';
 
@@ -1362,6 +1365,7 @@
             }
             dustParticles = [];
             smokeParticles = [];
+            ricochets = [];
             pickups = [];
             playerPickups = {};
             prevPositions = {};
@@ -1441,9 +1445,14 @@
             // Spawn explosions at projectile impact positions + play SFX
             if (msg.hits && msg.hits.length > 0) {
               for (const hit of msg.hits) {
-                explosions.push({ x: hit.x, y: hit.y, frame: 0, lastTick: Date.now() });
-                if (hit.hitType === 'tank') playExplosionSFX();
-                else playWallHitSFX();
+                if (hit.hitType === 'ricochet') {
+                  ricochets.push({ x: hit.x, y: hit.y, frame: 0, lastTick: Date.now() });
+                  playWallHitSFX();
+                } else {
+                  explosions.push({ x: hit.x, y: hit.y, frame: 0, lastTick: Date.now() });
+                  if (hit.hitType === 'tank') playExplosionSFX();
+                  else playWallHitSFX();
+                }
               }
             }
 
@@ -1646,6 +1655,38 @@
               sx, 0, EXPLOSION_FRAME_SIZE, EXPLOSION_FRAME_SIZE,
               e.x - half, e.y - half, EXPLOSION_DISPLAY, EXPLOSION_DISPLAY
             );
+          }
+        }
+      }
+
+      // Draw ricochet sparks
+      {
+        const now = Date.now();
+        const frameInterval = 1000 / RICOCHET_FPS;
+        ricochets = ricochets.filter(r => r.frame < RICOCHET_FRAMES);
+        for (const r of ricochets) {
+          while (now - r.lastTick >= frameInterval && r.frame < RICOCHET_FRAMES) {
+            r.frame++;
+            r.lastTick += frameInterval;
+          }
+          if (r.frame < RICOCHET_FRAMES) {
+            const t = r.frame / RICOCHET_FRAMES;
+            const size = 12 + t * 8;
+            const alpha = 1 - t;
+            // Bright yellow-white spark
+            const grad = ctx.createRadialGradient(r.x, r.y, 0, r.x, r.y, size);
+            grad.addColorStop(0, 'rgba(255,255,220,' + alpha + ')');
+            grad.addColorStop(0.4, 'rgba(255,200,60,' + (alpha * 0.6) + ')');
+            grad.addColorStop(1, 'rgba(255,150,0,0)');
+            ctx.beginPath();
+            ctx.arc(r.x, r.y, size, 0, Math.PI * 2);
+            ctx.fillStyle = grad;
+            ctx.fill();
+            // Small bright core
+            ctx.beginPath();
+            ctx.arc(r.x, r.y, 3 * (1 - t), 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255,255,255,' + alpha + ')';
+            ctx.fill();
           }
         }
       }
