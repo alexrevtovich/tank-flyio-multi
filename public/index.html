@@ -437,7 +437,6 @@
     const playShotSFX      = createSFXPool('/sound/sfx/Shot.mp3', 6, 0.3);
     const playExplosionSFX = createSFXPool('/sound/sfx/Explosion.mp3', 6, 0.4);
     const playWallHitSFX   = createSFXPool('/sound/sfx/hit_wall.mp3', 6, 0.3);
-    const playPickupSFX    = createSFXPool('/sound/sfx/Michael.mp3', 3, 0.5);
 
     // Explosion animation
     const EXPLOSION_FRAMES = 7;
@@ -1427,10 +1426,6 @@
             document.getElementById('lobby').classList.remove('hidden');
             document.getElementById('lobby-status').textContent =
               'Player disconnected — waiting for reconnect...';
-            break;
-
-          case 'pickup_collected':
-            playPickupSFX();
             break;
 
           case 'frame': {
