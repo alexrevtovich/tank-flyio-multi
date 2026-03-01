@@ -1680,25 +1680,29 @@
 
     function drawPickup(pickup) {
       const x = pickup.x, y = pickup.y, r = 15;
-      const pulse = 1 + 0.15 * Math.sin(Date.now() / 200);
-      const glowR = r * 1.8 * pulse;
+      const t = Date.now() / 300;
+      const pulse = 0.6 + 0.4 * Math.sin(t);
+      const glowR = r * (2.5 + 0.8 * Math.sin(t));
 
-      let baseColor, glowColor;
+      let baseColor, glowInner, glowOuter;
       if (pickup.type === 'heal') {
-        baseColor = 'rgba(220, 40, 40, 0.85)';
-        glowColor = 'rgba(255, 60, 60, 0.3)';
+        baseColor = 'rgba(220, 40, 40, 0.9)';
+        glowInner = 'rgba(255, 80, 80, ' + (0.4 + 0.25 * pulse) + ')';
+        glowOuter = 'rgba(255, 40, 40, 0)';
       } else if (pickup.type === 'speed') {
-        baseColor = 'rgba(220, 200, 40, 0.85)';
-        glowColor = 'rgba(255, 240, 60, 0.3)';
+        baseColor = 'rgba(230, 210, 40, 0.9)';
+        glowInner = 'rgba(255, 255, 80, ' + (0.4 + 0.25 * pulse) + ')';
+        glowOuter = 'rgba(255, 240, 40, 0)';
       } else {
-        baseColor = 'rgba(80, 120, 200, 0.85)';
-        glowColor = 'rgba(100, 150, 255, 0.3)';
+        baseColor = 'rgba(80, 130, 220, 0.9)';
+        glowInner = 'rgba(120, 170, 255, ' + (0.4 + 0.25 * pulse) + ')';
+        glowOuter = 'rgba(80, 140, 255, 0)';
       }
 
-      // Glow
-      const grad = ctx.createRadialGradient(x, y, 0, x, y, glowR);
-      grad.addColorStop(0, glowColor);
-      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      // Outer glow
+      const grad = ctx.createRadialGradient(x, y, r * 0.5, x, y, glowR);
+      grad.addColorStop(0, glowInner);
+      grad.addColorStop(1, glowOuter);
       ctx.beginPath();
       ctx.arc(x, y, glowR, 0, Math.PI * 2);
       ctx.fillStyle = grad;
@@ -1709,7 +1713,9 @@
       ctx.arc(x, y, r, 0, Math.PI * 2);
       ctx.fillStyle = baseColor;
       ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+
+      // Bright rim
+      ctx.strokeStyle = 'rgba(255,255,255,' + (0.4 + 0.3 * pulse) + ')';
       ctx.lineWidth = 2;
       ctx.stroke();
 
