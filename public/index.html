@@ -447,6 +447,39 @@
     let ricochets = [];  // { x, y, frame, lastTick } — small spark effect
     const RICOCHET_FRAMES = 5;
     const RICOCHET_FPS = 20;
+
+    // ── Drifting clouds ──
+    const CLOUD_COUNT = 6;
+    const CLOUD_SPEED = 0.15; // px per frame
+    const CLOUD_ALPHA = 0.07;
+    let clouds = [];
+    function initClouds() {
+      clouds = [];
+      for (let i = 0; i < CLOUD_COUNT; i++) {
+        clouds.push({
+          x: Math.random() * (W + 400) - 200,
+          y: 80 + Math.random() * (H - 160),
+          rx: 120 + Math.random() * 100,
+          ry: 50 + Math.random() * 40,
+          blobs: generateCloudBlobs(),
+          drift: CLOUD_SPEED * (0.7 + Math.random() * 0.6)
+        });
+      }
+    }
+    function generateCloudBlobs() {
+      const count = 4 + Math.floor(Math.random() * 4);
+      const blobs = [];
+      for (let i = 0; i < count; i++) {
+        blobs.push({
+          ox: (Math.random() - 0.5) * 1.4,
+          oy: (Math.random() - 0.5) * 0.8,
+          s: 0.5 + Math.random() * 0.6
+        });
+      }
+      return blobs;
+    }
+    initClouds();
+
     const explosionImg = new Image();
     explosionImg.src = '/images/effects/explosion.png';
 
@@ -1688,6 +1721,28 @@
             ctx.fillStyle = 'rgba(255,255,255,' + alpha + ')';
             ctx.fill();
           }
+        }
+      }
+
+      // Draw drifting clouds (on top of everything)
+      for (const c of clouds) {
+        c.x += c.drift;
+        if (c.x - c.rx > W + 100) {
+          c.x = -c.rx - 100;
+          c.y = 80 + Math.random() * (H - 160);
+        }
+        for (const b of c.blobs) {
+          const bx = c.x + b.ox * c.rx;
+          const by = c.y + b.oy * c.ry;
+          const br = c.rx * b.s * 0.5;
+          const grad = ctx.createRadialGradient(bx, by, 0, bx, by, br);
+          grad.addColorStop(0, 'rgba(255,255,255,' + CLOUD_ALPHA + ')');
+          grad.addColorStop(0.6, 'rgba(255,255,255,' + (CLOUD_ALPHA * 0.5) + ')');
+          grad.addColorStop(1, 'rgba(255,255,255,0)');
+          ctx.beginPath();
+          ctx.arc(bx, by, br, 0, Math.PI * 2);
+          ctx.fillStyle = grad;
+          ctx.fill();
         }
       }
     }
