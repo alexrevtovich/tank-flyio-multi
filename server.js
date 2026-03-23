@@ -443,7 +443,12 @@ function handleWSConnection(ws) {
         console.log(`Room ${room.id}: Player ${player.id} (${player.name}) joined with code ${code}`);
 
         if (room.players.every(p => p.connected) && !room.gameRunning) {
-          startGame(room);
+          const hasScores = room.players.some(p => p.score > 0);
+          if (hasScores) {
+            restartRound(room);
+          } else {
+            startGame(room);
+          }
         }
         break;
       }
@@ -530,16 +535,16 @@ function handleWSConnection(ws) {
       console.log(`Room ${room.id}: Game screen disconnected (${room.gameScreens.length} remaining)`);
     } else if (typeof assignedRole === 'number') {
       const player = room.players[assignedRole - 1];
-      if (player) {
+      // Guard: only clean up if this WS is still the active connection.
+      // A reconnect closes the old WS explicitly; its async 'close' fires later
+      // and must not overwrite the new WS already set in the 'join' handler.
+      if (player && player.ws === ws) {
         player.connected = false;
         player.ws = null;
         room.inputState[assignedRole] = { x: 0, y: 0 };
         sendToGame(room, { type: 'player_left', playerId: assignedRole });
         console.log(`Room ${room.id}: Player ${assignedRole} disconnected`);
-
-        if (room.gameRunning) {
-          pauseGame(room);
-        }
+        // Game continues — player stays frozen until they reconnect or are eliminated
       }
     }
 
@@ -647,15 +652,6 @@ function restartRound(room) {
   room.gameLoopInterval = setInterval(() => gameLoop(room), 1000 / 45);
 }
 
-function pauseGame(room) {
-  room.gameRunning = false;
-  if (room.gameLoopInterval) {
-    clearInterval(room.gameLoopInterval);
-    room.gameLoopInterval = null;
-  }
-  sendToGame(room, { type: 'game_paused' });
-  console.log(`Room ${room.id}: Game paused — waiting for reconnect`);
-}
 
 function updateBotAI(room) {
   const now = Date.now();
