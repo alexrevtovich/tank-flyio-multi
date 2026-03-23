@@ -11,7 +11,7 @@ const { rooms, generateRoomId, createRoom } = require('./rooms');
  * Returns { assignedRole, assignedRoom } on success, or null if an error was
  * sent and the caller should break without updating state.
  */
-function handleRegisterGame(ws, msg, state) {
+function handleRegisterGame(ws, msg, _state) {
   let roomId = msg.roomId || null;
   let room;
   let isNewRoom = false;
