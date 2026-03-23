@@ -443,7 +443,7 @@ function handleWSConnection(ws) {
           return;
         }
         if (player.ws && player.ws !== ws) {
-          try { player.ws.close(); } catch {}
+          try { player.ws.close(); } catch (_e) { /* old WS already closing */ }
         }
         player.ws = ws;
         player.connected = true;
