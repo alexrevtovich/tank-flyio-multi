@@ -5,6 +5,7 @@ const { WebSocketServer } = require('ws');
 
 // ── Config ──
 const PORT = process.env.PORT || 8080;
+const MAX_WS_MESSAGE_BYTES = 4 * 1024; // 4 KB is plenty for any game message
 
 // ── Room ID generation ──
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -81,6 +82,8 @@ function createRoom(roomId) {
     gameLoopInterval: null,
     gameStartTime: 0,
     frameShotsFired: [],
+    frameHits: [],
+    frameDestructHits: [],
     ownerWs: null
   };
   initPlayers(room, 2);
@@ -126,6 +129,9 @@ function initPlayers(room, count) {
   room.facing = {};
   room.projectiles = {};
   room.lastFireTime = {};
+  room.healState = {};
+  room.botState = {};
+  room.readyState = {};
 
   for (let i = 0; i < count; i++) {
     const id = i + 1;
@@ -168,19 +174,15 @@ function generateWalls() {
     const x = 100 + Math.floor(Math.random() * (CANVAS_W - 200));
     const y = 100 + Math.floor(Math.random() * (CANVAS_H - 200));
     const angle = Math.random() < 0.5 ? 0 : Math.PI / 2;
-    walls.push({ x, y, w, h, angle });
+    walls.push({ x, y, w, h, angle, cos: Math.cos(-angle), sin: Math.sin(-angle) });
   }
   return walls;
 }
 
 function toWallLocal(wx, wy, wall) {
-  const cx = wall.x;
-  const cy = wall.y;
-  const dx = wx - cx;
-  const dy = wy - cy;
-  const cos = Math.cos(-wall.angle);
-  const sin = Math.sin(-wall.angle);
-  return { x: dx * cos - dy * sin, y: dx * sin + dy * cos };
+  const dx = wx - wall.x;
+  const dy = wy - wall.y;
+  return { x: dx * wall.cos - dy * wall.sin, y: dx * wall.sin + dy * wall.cos };
 }
 
 // ── Destructible rock formations ──
@@ -218,7 +220,15 @@ const MIME = {
   '.mp3':  'audio/mpeg'
 };
 
+const publicDir = path.resolve(__dirname, 'public');
+
 const server = http.createServer((req, res) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.writeHead(405);
+    res.end('Method Not Allowed');
+    return;
+  }
+
   let urlPath = req.url.split('?')[0];
 
   if (urlPath === '/api/rooms') {
@@ -242,22 +252,29 @@ const server = http.createServer((req, res) => {
 
   if (urlPath === '/') urlPath = '/index.html';
 
-  const filePath = path.join(__dirname, 'public', urlPath);
-  const ext = path.extname(filePath);
+  const safePath = path.resolve(publicDir, '.' + urlPath);
+  if (!safePath.startsWith(publicDir + path.sep) && safePath !== publicDir) {
+    res.writeHead(403);
+    res.end('Forbidden');
+    return;
+  }
 
-  fs.readFile(filePath, (err, data) => {
-    if (err) {
-      res.writeHead(404);
-      res.end('Not Found');
-      return;
-    }
+  const ext = path.extname(safePath);
+  const stream = fs.createReadStream(safePath);
 
+  stream.on('open', () => {
     res.writeHead(200, {
       'Content-Type': MIME[ext] || 'application/octet-stream',
       'Access-Control-Allow-Origin': '*',
       'Cache-Control': 'no-cache'
     });
-    res.end(data);
+    if (req.method === 'HEAD') { res.end(); stream.destroy(); return; }
+    stream.pipe(res);
+  });
+
+  stream.on('error', () => {
+    res.writeHead(404);
+    res.end('Not Found');
   });
 });
 
@@ -279,9 +296,13 @@ function handleWSConnection(ws) {
   let assignedRole = null;
   let assignedRoom = null;
 
-  ws.on('message', (raw) => {
+  ws.on('message', (raw, isBinary) => {
+    if (isBinary) { ws.close(1003, 'Binary not supported'); return; }
+    const size = Buffer.isBuffer(raw) ? raw.length : Buffer.byteLength(String(raw));
+    if (size > MAX_WS_MESSAGE_BYTES) { ws.close(1009, 'Message too large'); return; }
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
+    if (!msg || typeof msg.type !== 'string') return;
 
     switch (msg.type) {
       case 'register_game': {
@@ -367,26 +388,26 @@ function handleWSConnection(ws) {
         const room = assignedRoom;
         if (room.gameRunning) break;
         if (room.botPlayerIds.size === 0) break;
-        const botIds = [...room.botPlayerIds].sort((a, b) => b - a);
-        const removedId = botIds[0];
-        room.botPlayerIds.delete(removedId);
-        let newCount = room.playerCount;
-        if (removedId === room.playerCount) {
-          newCount = room.playerCount - 1;
-          if (newCount < 2) newCount = 2;
-        }
-        const savedHumans2 = room.players.filter(p => !p.isBot && p.connected).map(p => ({
-          id: p.id, ws: p.ws, score: p.score, name: p.name
+        // Snapshot slot info before rebuild, splicing out the removed bot slot
+        const removedId = [...room.botPlayerIds].sort((a, b) => b - a)[0];
+        const oldSlots = room.players.map(p => ({
+          isBot: !!p.isBot, connected: !!p.connected, ws: p.ws, score: p.score, name: p.name
         }));
+        oldSlots.splice(removedId - 1, 1);
+        // Rebuild botPlayerIds from remaining slots
+        room.botPlayerIds = new Set();
+        oldSlots.forEach((slot, i) => { if (slot.isBot) room.botPlayerIds.add(i + 1); });
+        const newCount = Math.max(2, oldSlots.length);
         initPlayers(room, newCount);
-        for (const h of savedHumans2) {
-          if (h.id <= newCount) {
-            room.players[h.id - 1].ws = h.ws;
-            room.players[h.id - 1].connected = true;
-            room.players[h.id - 1].score = h.score;
-            room.players[h.id - 1].name = h.name;
-          }
-        }
+        // Restore human connections into new slots
+        oldSlots.forEach((slot, i) => {
+          const p = room.players[i];
+          if (!p || slot.isBot) return;
+          p.ws = slot.connected ? slot.ws : null;
+          p.connected = slot.connected;
+          p.score = slot.score;
+          p.name = slot.name;
+        });
         room.walls = generateWalls();
         room.destructibles = generateDestructibles();
         room.bgSeed = 1 + Math.floor(Math.random() * 999999);
@@ -816,6 +837,10 @@ function checkPickupCollisions(room) {
 }
 
 function gameLoop(room) {
+  room.frameShotsFired.length = 0;
+  room.frameHits.length = 0;
+  room.frameDestructHits.length = 0;
+
   updateBotAI(room);
 
   for (const p of room.players) {
@@ -852,10 +877,8 @@ function gameLoop(room) {
         const dist = Math.sqrt(distSq);
         const plx = (dlx / dist) * (RADIUS - dist);
         const ply = (dly / dist) * (RADIUS - dist);
-        const cos = Math.cos(wall.angle);
-        const sin = Math.sin(wall.angle);
-        p.x += plx * cos - ply * sin;
-        p.y += plx * sin + ply * cos;
+        p.x += plx * wall.cos + ply * wall.sin;
+        p.y += -plx * wall.sin + ply * wall.cos;
         p.x = Math.max(RADIUS, Math.min(CANVAS_W - RADIUS, p.x));
         p.y = Math.max(RADIUS, Math.min(CANVAS_H - RADIUS, p.y));
       }
@@ -932,8 +955,8 @@ function gameLoop(room) {
     }
   }
 
-  const frameHits = [];
-  const frameDestructHits = [];
+  const frameHits = room.frameHits;
+  const frameDestructHits = room.frameDestructHits;
   const now = Date.now();
   for (const p of room.players) {
     const id = p.id;
@@ -1088,7 +1111,6 @@ function gameLoop(room) {
       playerPickups: room.playerPickups
     };
     sendToGame(room, frame);
-    room.frameShotsFired = [];
 
     room.gameRunning = false;
     if (room.gameLoopInterval) { clearInterval(room.gameLoopInterval); room.gameLoopInterval = null; }
@@ -1154,7 +1176,6 @@ function gameLoop(room) {
   }
 
   sendToGame(room, frame);
-  room.frameShotsFired = [];
 }
 
 function sendToGame(room, obj) {
