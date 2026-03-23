@@ -6,16 +6,16 @@ const { WebSocketServer } = require('ws');
 const {
   PORT, MAX_WS_MESSAGE_BYTES, ALPHABET, PLAYER_COLORS,
   RADIUS, SPEED, CANVAS_W, CANVAS_H,
-  PROJECTILE_SPEED, PROJECTILE_RADIUS, FIRE_COOLDOWN,
-  MAX_HP, BULLET_DAMAGE,
-  DESTRUCT_RADIUS,
-  ARMOUR_FRONT, ARMOUR_SIDE, ARMOUR_REAR,
+  MAX_HP,
   HEAL_PER_SEC, HEAL_DURATION, HEAL_COOLDOWN,
   PICKUP_RADIUS, PICKUP_INTERVAL, PICKUP_TYPES
 } = require('./server/config');
 
 const { sendToGame, sendToOneGame, sendInitToGame, sendInitToOneGame, sendToPlayer } = require('./server/net');
-const { generateWalls, toWallLocal, generateDestructibles, isDestructibleSolid } = require('./server/map');
+const { generateWalls, toWallLocal, generateDestructibles } = require('./server/map');
+const { initPlayers, resetRound } = require('./server/players');
+const { tryShoot, updateProjectiles } = require('./server/projectiles');
+const { updateBotAI } = require('./server/bots');
 
 // ── Room ID generation ──
 function generateCode(len) {
@@ -83,66 +83,6 @@ function checkRoomCleanup(room) {
     if (room.gameLoopInterval) clearInterval(room.gameLoopInterval);
     rooms.delete(room.id);
     console.log(`Room ${room.id} destroyed. Active rooms: ${rooms.size}`);
-  }
-}
-
-// ── Spawn positions ──
-function getSpawnPositions(count) {
-  const positions = [];
-  const cx = CANVAS_W / 2;
-  const cy = CANVAS_H / 2;
-  const spawnRadius = Math.min(CANVAS_W, CANVAS_H) * 0.35;
-  for (let i = 0; i < count; i++) {
-    const angle = (2 * Math.PI * i) / count;
-    positions.push({
-      x: Math.round(cx + Math.cos(angle) * spawnRadius),
-      y: Math.round(cy + Math.sin(angle) * spawnRadius)
-    });
-  }
-  return positions;
-}
-
-function initPlayers(room, count) {
-  room.playerCount = count;
-  const positions = getSpawnPositions(count);
-  room.players = [];
-  room.inputState = {};
-  room.facing = {};
-  room.projectiles = {};
-  room.lastFireTime = {};
-  room.healState = {};
-  room.botState = {};
-  room.readyState = {};
-
-  for (let i = 0; i < count; i++) {
-    const id = i + 1;
-    const isBot = room.botPlayerIds.has(id);
-    room.players.push({
-      id,
-      code: isBot ? 'BOT' : String(id),
-      ws: null,
-      connected: isBot ? true : false,
-      isBot,
-      name: isBot ? 'Bot' + id : 'P' + id,
-      x: positions[i].x,
-      y: positions[i].y,
-      score: 0,
-      hp: MAX_HP,
-      alive: true
-    });
-    room.inputState[id] = { x: 0, y: 0 };
-    room.facing[id] = { dx: 0, dy: -1 };
-    room.projectiles[id] = null;
-    room.lastFireTime[id] = 0;
-    room.healState[id] = { active: false, startTime: 0, lastTick: 0, endTime: 0 };
-    if (isBot) {
-      room.botState[id] = { avoidUntil: 0, avoidDirX: 0, avoidDirY: 0, lastX: positions[i].x, lastY: positions[i].y, stuckFrames: 0 };
-    }
-  }
-  room.botPlayerIds = new Set([...room.botPlayerIds].filter(id => id <= count));
-  room.playerPickups = {};
-  for (let i = 0; i < count; i++) {
-    room.playerPickups[i + 1] = { speed: false, armour: false, heal: false };
   }
 }
 
@@ -503,68 +443,7 @@ wss.on('connection', (ws) => {
   handleWSConnection(ws);
 });
 
-// ── Projectile Logic ──
-function tryShoot(room, playerId) {
-  if (room.projectiles[playerId] !== null) return;
-
-  const p = room.players[playerId - 1];
-  if (!p || !p.alive) return;
-
-  const now = Date.now();
-  const cooldown = p.isBot ? FIRE_COOLDOWN * 2 : FIRE_COOLDOWN;
-  if (now - room.lastFireTime[playerId] < cooldown) return;
-  const dir = room.facing[playerId];
-
-  if (dir.dx === 0 && dir.dy === 0) return;
-
-  room.lastFireTime[playerId] = now;
-
-  room.projectiles[playerId] = {
-    x: p.x + dir.dx * (RADIUS + PROJECTILE_RADIUS + 2),
-    y: p.y + dir.dy * (RADIUS + PROJECTILE_RADIUS + 2),
-    dx: dir.dx * PROJECTILE_SPEED,
-    dy: dir.dy * PROJECTILE_SPEED,
-    ownerId: playerId,
-    lastRicochetId: null,
-    createdAt: now
-  };
-
-  room.frameShotsFired.push(playerId);
-
-  sendToPlayer(room, playerId, { type: 'shot_fired' });
-}
-
 // ── Game Loop ──
-function resetRound(room, resetScores) {
-  const positions = getSpawnPositions(room.playerCount);
-  for (let i = 0; i < room.players.length; i++) {
-    room.players[i].x = positions[i].x;
-    room.players[i].y = positions[i].y;
-    if (resetScores) room.players[i].score = 0;
-    room.players[i].hp = MAX_HP;
-    room.players[i].alive = true;
-    const id = room.players[i].id;
-    room.inputState[id] = { x: 0, y: 0 };
-    room.facing[id] = { dx: 0, dy: -1 };
-    room.projectiles[id] = null;
-    room.lastFireTime[id] = 0;
-    room.healState[id] = { active: false, startTime: 0, lastTick: 0, endTime: 0 };
-    if (room.players[i].isBot) {
-      room.botState[id] = { avoidUntil: 0, avoidDirX: 0, avoidDirY: 0, lastX: positions[i].x, lastY: positions[i].y, stuckFrames: 0 };
-    }
-  }
-  room.walls = generateWalls();
-  room.destructibles = generateDestructibles();
-  room.bgSeed = 1 + Math.floor(Math.random() * 999999);
-  room.pickups = [];
-  room.lastPickupSpawnTime = 0;
-  room.nextPickupTypeIndex = 0;
-  room.pickupIdCounter = 0;
-  for (const p of room.players) {
-    room.playerPickups[p.id] = { speed: false, armour: false, heal: false };
-  }
-}
-
 function startGame(room) {
   room.gameRunning = true;
   room.gameStartTime = Date.now();
@@ -597,94 +476,6 @@ function restartRound(room) {
   room.gameLoopInterval = setInterval(() => gameLoop(room), 1000 / 45);
 }
 
-
-function updateBotAI(room) {
-  const now = Date.now();
-  if (now - room.gameStartTime < 2000) return;
-  for (const p of room.players) {
-    if (!p.isBot || !p.alive) continue;
-    const id = p.id;
-    const state = room.botState[id];
-    if (!state) continue;
-
-    let closestDist = Infinity;
-    let closestPlayer = null;
-    for (const other of room.players) {
-      if (other.id === id || !other.alive) continue;
-      const dx = other.x - p.x;
-      const dy = other.y - p.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < closestDist) {
-        closestDist = dist;
-        closestPlayer = other;
-      }
-    }
-
-    if (!closestPlayer) {
-      room.inputState[id] = { x: 0, y: 0 };
-      continue;
-    }
-
-    tryShoot(room, id);
-
-    const movedDx = p.x - state.lastX;
-    const movedDy = p.y - state.lastY;
-    const movedDist = Math.sqrt(movedDx * movedDx + movedDy * movedDy);
-    const hadInput = Math.abs(room.inputState[id].x) > 0.1 || Math.abs(room.inputState[id].y) > 0.1;
-    if (hadInput && movedDist < 0.5) {
-      state.stuckFrames++;
-    } else {
-      state.stuckFrames = 0;
-    }
-    state.lastX = p.x;
-    state.lastY = p.y;
-
-    if (state.stuckFrames > 10 && now >= state.avoidUntil) {
-      const curDx = room.inputState[id].x;
-      const curDy = room.inputState[id].y;
-      const turnRight = Math.random() < 0.5;
-      if (turnRight) {
-        state.avoidDirX = -curDy;
-        state.avoidDirY = curDx;
-      } else {
-        state.avoidDirX = curDy;
-        state.avoidDirY = -curDx;
-      }
-      const avoidLen = Math.sqrt(state.avoidDirX * state.avoidDirX + state.avoidDirY * state.avoidDirY);
-      if (avoidLen > 0) {
-        state.avoidDirX /= avoidLen;
-        state.avoidDirY /= avoidLen;
-      } else {
-        const angle = Math.random() * Math.PI * 2;
-        state.avoidDirX = Math.cos(angle);
-        state.avoidDirY = Math.sin(angle);
-      }
-      state.avoidUntil = now + 2000;
-      state.stuckFrames = 0;
-    }
-
-    let movX, movY;
-    if (now < state.avoidUntil) {
-      movX = state.avoidDirX;
-      movY = state.avoidDirY;
-    } else {
-      const moveDx2 = closestPlayer.x - p.x;
-      const moveDy2 = closestPlayer.y - p.y;
-      const moveLen = Math.sqrt(moveDx2 * moveDx2 + moveDy2 * moveDy2);
-      if (moveLen > 0) {
-        movX = moveDx2 / moveLen;
-        movY = moveDy2 / moveLen;
-      } else {
-        movX = 0; movY = 0;
-      }
-    }
-    room.inputState[id] = { x: movX, y: movY };
-    if (Math.abs(movX) > 0.01 || Math.abs(movY) > 0.01) {
-      const fLen = Math.sqrt(movX * movX + movY * movY);
-      room.facing[id] = { dx: movX / fLen, dy: movY / fLen };
-    }
-  }
-}
 
 function spawnPickup(room) {
   if (room.pickups.length > 0) return;
@@ -879,138 +670,7 @@ function gameLoop(room) {
     }
   }
 
-  const frameHits = room.frameHits;
-  const frameDestructHits = room.frameDestructHits;
-  const now = Date.now();
-  for (const p of room.players) {
-    const id = p.id;
-    const proj = room.projectiles[id];
-    if (!proj) continue;
-
-    proj.x += proj.dx;
-    proj.y += proj.dy;
-
-    if (now - proj.createdAt >= 2000) {
-      frameHits.push({ x: Math.round(proj.x), y: Math.round(proj.y), hitType: 'wall' });
-      room.projectiles[id] = null;
-      continue;
-    }
-
-    if (proj.x < 0 || proj.x > CANVAS_W || proj.y < 0 || proj.y > CANVAS_H) {
-      frameHits.push({
-        x: Math.round(Math.max(0, Math.min(CANVAS_W, proj.x))),
-        y: Math.round(Math.max(0, Math.min(CANVAS_H, proj.y))),
-        hitType: 'wall'
-      });
-      room.projectiles[id] = null;
-      continue;
-    }
-
-    let hitWall = false;
-    for (const wall of room.walls) {
-      const hw = wall.w / 2, hh = wall.h / 2;
-      const local = toWallLocal(proj.x, proj.y, wall);
-      if (local.x >= -hw && local.x <= hw && local.y >= -hh && local.y <= hh) {
-        frameHits.push({ x: Math.round(proj.x), y: Math.round(proj.y), hitType: 'wall' });
-        room.projectiles[id] = null;
-        hitWall = true;
-        break;
-      }
-    }
-    if (hitWall) continue;
-
-    let hitDestruct = false;
-    for (const obj of room.destructibles) {
-      if (isDestructibleSolid(obj, proj.x, proj.y)) {
-        const cx = Math.round(proj.x), cy = Math.round(proj.y);
-        obj.holes.push({ cx, cy, r: DESTRUCT_RADIUS });
-        frameHits.push({ x: cx, y: cy, hitType: 'wall' });
-        frameDestructHits.push({ x: cx, y: cy, r: DESTRUCT_RADIUS });
-        room.projectiles[id] = null;
-        hitDestruct = true;
-        break;
-      }
-    }
-    if (hitDestruct) continue;
-
-    let hitPlayer = false;
-    let ricocheted = false;
-    for (const target of room.players) {
-      if (target.id === id || !target.alive) continue;
-      if (target.id === proj.lastRicochetId) continue;
-      const dx = proj.x - target.x;
-      const dy = proj.y - target.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-
-      if (dist < RADIUS + PROJECTILE_RADIUS) {
-        // Check angle of incidence for ricochet
-        const tFace = room.facing[target.id];
-        const projAngle = Math.atan2(proj.dy, proj.dx);
-        const faceAngle = Math.atan2(tFace.dy, tFace.dx);
-        let relAngle = Math.abs(projAngle - faceAngle);
-        if (relAngle > Math.PI) relAngle = 2 * Math.PI - relAngle;
-
-        // Surface normal at impact (from tank center to projectile)
-        const nLen = dist > 0 ? dist : 1;
-        const nx = dx / nLen, ny = dy / nLen;
-        // Incoming direction (reversed projectile velocity)
-        const projSpeed = Math.sqrt(proj.dx * proj.dx + proj.dy * proj.dy);
-        if (projSpeed < 0.01) { /* dead projectile */ room.projectiles[id] = null; hitPlayer = true; break; }
-        const inX = -proj.dx / projSpeed, inY = -proj.dy / projSpeed;
-        // Angle of incidence: angle between incoming dir and surface normal
-        const cosAngle = nx * inX + ny * inY;
-
-        // Ricochet: angle > 50° from normal (< 40° from surface), but NOT rear hits
-        const isRear = relAngle <= Math.PI * 0.25;
-        if (!isRear && cosAngle < 0.6428) { // cos(50°) ≈ 0.6428
-          // Ricochet — reflect projectile off surface normal
-          const dot2 = 2 * (proj.dx * nx + proj.dy * ny);
-          proj.dx = proj.dx - dot2 * nx;
-          proj.dy = proj.dy - dot2 * ny;
-          // Push projectile out of collision
-          proj.x = target.x + nx * (RADIUS + PROJECTILE_RADIUS + 1);
-          proj.y = target.y + ny * (RADIUS + PROJECTILE_RADIUS + 1);
-          proj.lastRicochetId = target.id;
-          frameHits.push({ x: Math.round(proj.x), y: Math.round(proj.y), hitType: 'ricochet' });
-          ricocheted = true;
-          break;
-        }
-
-        // Normal hit — apply damage
-        frameHits.push({ x: Math.round(proj.x), y: Math.round(proj.y), hitType: 'tank' });
-
-        const armourUpgrade = (room.playerPickups[target.id] && room.playerPickups[target.id].armour) ? 5 : 0;
-        let armour;
-        if (relAngle >= Math.PI * 0.75) {
-          armour = ARMOUR_FRONT + armourUpgrade;
-        } else if (isRear) {
-          armour = ARMOUR_REAR + armourUpgrade;
-        } else {
-          armour = ARMOUR_SIDE + armourUpgrade;
-        }
-
-        target.hp -= (BULLET_DAMAGE - armour);
-        room.projectiles[id] = null;
-
-        if (target.hp <= 0) {
-          target.hp = 0;
-          target.alive = false;
-          room.projectiles[target.id] = null;
-          sendToPlayer(room, target.id, { type: 'feedback', action: 'vibrate', duration: 500 });
-        } else {
-          sendToPlayer(room, target.id, { type: 'feedback', action: 'vibrate', duration: 300 });
-        }
-
-        sendToPlayer(room, id, { type: 'feedback', action: 'hit_confirm' });
-
-        hitPlayer = true;
-        break;
-      }
-    }
-    if (ricocheted) continue;
-    if (proj.lastRicochetId) proj.lastRicochetId = null;
-    if (hitPlayer) continue;
-  }
+  updateProjectiles(room);
 
   const alivePlayers = room.players.filter(pl => pl.alive);
   if (alivePlayers.length <= 1 && room.players.length > 1) {
@@ -1028,8 +688,8 @@ function gameLoop(room) {
         };
       }),
       projectiles: [],
-      hits: frameHits,
-      destructHits: frameDestructHits,
+      hits: room.frameHits,
+      destructHits: room.frameDestructHits,
       shots: room.frameShotsFired,
       pickups: room.pickups,
       playerPickups: room.playerPickups
@@ -1082,8 +742,8 @@ function gameLoop(room) {
       };
     }),
     projectiles: [],
-    hits: frameHits,
-    destructHits: frameDestructHits,
+    hits: room.frameHits,
+    destructHits: room.frameDestructHits,
     shots: room.frameShotsFired,
     pickups: room.pickups,
     playerPickups: room.playerPickups
