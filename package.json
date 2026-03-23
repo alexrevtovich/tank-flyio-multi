@@ -1,17 +1,38 @@
 {
-  "name": "shoot-game",
+  "name": "kosh-tanks-server",
   "version": "1.0.0",
-  "description": "Browser multiplayer game with phone controllers - shake to shoot",
+  "private": true,
+  "description": "Authoritative multiplayer tank game server using Node.js, HTTP, and WebSockets",
   "main": "server.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node server.js",
-    "lint": "eslint server.js"
+    "dev": "nodemon server.js",
+    "lint": "eslint server.js",
+    "lint:fix": "eslint server.js --fix",
+    "format": "prettier --write server.js CLAUDE.md",
+    "format:check": "prettier --check server.js CLAUDE.md",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
+  "keywords": [
+    "node",
+    "websocket",
+    "multiplayer",
+    "game-server",
+    "tanks"
+  ],
   "dependencies": {
-    "ws": "^8.16.0"
+    "ws": "8.20.0"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
-    "eslint": "^10.1.0"
+    "@eslint/js": "10.0.1",
+    "eslint": "10.1.0",
+    "nodemon": "3.1.14",
+    "prettier": "3.8.1",
+    "vitest": "4.1.0"
   }
 }

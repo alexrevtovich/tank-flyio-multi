@@ -1,0 +1,43 @@
+'use strict';
+
+const PORT = process.env.PORT || 8080;
+const MAX_WS_MESSAGE_BYTES = 4 * 1024;
+
+const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+const PLAYER_COLORS = [
+  '#FF4444', '#4488FF', '#44DD44', '#DDDD44',
+  '#AA44FF', '#FF8844', '#44DDDD', '#FF44AA'
+];
+
+const RADIUS            = 20;
+const SPEED             = 3;
+const CANVAS_W          = 1800;
+const CANVAS_H          = 1000;
+const PROJECTILE_SPEED  = 6;
+const PROJECTILE_RADIUS = 4;
+const FIRE_COOLDOWN     = 1000;
+const MAX_HP            = 100;
+const BULLET_DAMAGE     = 50;
+const DESTRUCT_COUNT    = 24;
+const DESTRUCT_RADIUS   = 25;
+const ARMOUR_FRONT      = 10;
+const ARMOUR_SIDE       = 5;
+const ARMOUR_REAR       = 0;
+const HEAL_PER_SEC      = 1;
+const HEAL_DURATION     = 10000;
+const HEAL_COOLDOWN     = 3000;
+const PICKUP_RADIUS     = 15;
+const PICKUP_INTERVAL   = 20000;
+const PICKUP_TYPES      = ['speed', 'armour', 'heal'];
+
+module.exports = {
+  PORT, MAX_WS_MESSAGE_BYTES, ALPHABET, PLAYER_COLORS,
+  RADIUS, SPEED, CANVAS_W, CANVAS_H,
+  PROJECTILE_SPEED, PROJECTILE_RADIUS, FIRE_COOLDOWN,
+  MAX_HP, BULLET_DAMAGE,
+  DESTRUCT_COUNT, DESTRUCT_RADIUS,
+  ARMOUR_FRONT, ARMOUR_SIDE, ARMOUR_REAR,
+  HEAL_PER_SEC, HEAL_DURATION, HEAL_COOLDOWN,
+  PICKUP_RADIUS, PICKUP_INTERVAL, PICKUP_TYPES
+};

@@ -3,12 +3,21 @@ const fs = require('fs');
 const path = require('path');
 const { WebSocketServer } = require('ws');
 
-// ── Config ──
-const PORT = process.env.PORT || 8080;
-const MAX_WS_MESSAGE_BYTES = 4 * 1024; // 4 KB is plenty for any game message
+const {
+  PORT, MAX_WS_MESSAGE_BYTES, ALPHABET, PLAYER_COLORS,
+  RADIUS, SPEED, CANVAS_W, CANVAS_H,
+  PROJECTILE_SPEED, PROJECTILE_RADIUS, FIRE_COOLDOWN,
+  MAX_HP, BULLET_DAMAGE,
+  DESTRUCT_RADIUS,
+  ARMOUR_FRONT, ARMOUR_SIDE, ARMOUR_REAR,
+  HEAL_PER_SEC, HEAL_DURATION, HEAL_COOLDOWN,
+  PICKUP_RADIUS, PICKUP_INTERVAL, PICKUP_TYPES
+} = require('./server/config');
+
+const { sendToGame, sendToOneGame, sendInitToGame, sendInitToOneGame, sendToPlayer } = require('./server/net');
+const { generateWalls, toWallLocal, generateDestructibles, isDestructibleSolid } = require('./server/map');
 
 // ── Room ID generation ──
-const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 function generateCode(len) {
   let code = '';
   for (let i = 0; i < len; i++) {
@@ -24,34 +33,6 @@ function generateRoomId() {
   }
   return generateCode(6);
 }
-
-// ── Player colors (up to 8) ──
-const PLAYER_COLORS = [
-  '#FF4444', '#4488FF', '#44DD44', '#DDDD44',
-  '#AA44FF', '#FF8844', '#44DDDD', '#FF44AA'
-];
-
-// ── Game constants ──
-const RADIUS = 20;
-const SPEED = 3;
-const CANVAS_W = 1800;
-const CANVAS_H = 1000;
-const PROJECTILE_SPEED = 6;
-const PROJECTILE_RADIUS = 4;
-const FIRE_COOLDOWN = 1000;
-const MAX_HP = 100;
-const BULLET_DAMAGE = 50;
-const DESTRUCT_COUNT = 24;
-const DESTRUCT_RADIUS = 25;
-const ARMOUR_FRONT = 10;
-const ARMOUR_SIDE = 5;
-const ARMOUR_REAR = 0;
-const HEAL_PER_SEC = 1;
-const HEAL_DURATION = 10000;
-const HEAL_COOLDOWN = 3000;
-const PICKUP_RADIUS = 15;
-const PICKUP_INTERVAL = 20000;
-const PICKUP_TYPES = ['speed', 'armour', 'heal'];
 
 // ── Rooms ──
 const rooms = new Map();
@@ -165,50 +146,6 @@ function initPlayers(room, count) {
   }
 }
 
-// ── Wall obstacles ──
-function generateWalls() {
-  const walls = [];
-  for (let i = 0; i < 10; i++) {
-    const w = 10 + Math.floor(Math.random() * 11);
-    const h = 20 + Math.floor(Math.random() * 61);
-    const x = 100 + Math.floor(Math.random() * (CANVAS_W - 200));
-    const y = 100 + Math.floor(Math.random() * (CANVAS_H - 200));
-    const angle = Math.random() < 0.5 ? 0 : Math.PI / 2;
-    walls.push({ x, y, w, h, angle, cos: Math.cos(-angle), sin: Math.sin(-angle) });
-  }
-  return walls;
-}
-
-function toWallLocal(wx, wy, wall) {
-  const dx = wx - wall.x;
-  const dy = wy - wall.y;
-  return { x: dx * wall.cos - dy * wall.sin, y: dx * wall.sin + dy * wall.cos };
-}
-
-// ── Destructible rock formations ──
-function generateDestructibles() {
-  const objs = [];
-  for (let i = 0; i < DESTRUCT_COUNT; i++) {
-    const w = 40 + Math.floor(Math.random() * 41);
-    const h = 40 + Math.floor(Math.random() * 41);
-    const x = 120 + Math.floor(Math.random() * (CANVAS_W - 240));
-    const y = 120 + Math.floor(Math.random() * (CANVAS_H - 240));
-    objs.push({ id: i, x, y, w, h, holes: [] });
-  }
-  return objs;
-}
-
-function isDestructibleSolid(obj, px, py) {
-  const hw = obj.w / 2, hh = obj.h / 2;
-  if (px < obj.x - hw || px > obj.x + hw ||
-      py < obj.y - hh || py > obj.y + hh) return false;
-  for (const hole of obj.holes) {
-    const dx = px - hole.cx, dy = py - hole.cy;
-    if (dx * dx + dy * dy <= hole.r * hole.r) return false;
-  }
-  return true;
-}
-
 // ── HTTP Server ──
 const MIME = {
   '.html': 'text/html',
@@ -277,19 +214,6 @@ const server = http.createServer((req, res) => {
     res.end('Not Found');
   });
 });
-
-// ── Helper: send init state to game screens ──
-function sendInitToGame(room) {
-  sendToGame(room, {
-    type: 'init',
-    roomId: room.id,
-    players: room.players.map(p => ({
-      id: p.id, code: p.code, connected: p.connected, score: p.score, isBot: p.isBot || false, name: p.name
-    })),
-    walls: room.walls, destructibles: room.destructibles, bgSeed: room.bgSeed,
-    colors: PLAYER_COLORS
-  });
-}
 
 // ── WebSocket Handler ──
 function handleWSConnection(ws) {
@@ -1176,38 +1100,6 @@ function gameLoop(room) {
   }
 
   sendToGame(room, frame);
-}
-
-function sendToGame(room, obj) {
-  const data = JSON.stringify(obj);
-  for (const gs of room.gameScreens) {
-    if (gs.readyState === 1) gs.send(data);
-  }
-}
-
-function sendInitToOneGame(room, ws) {
-  sendToOneGame(ws, {
-    type: 'init',
-    roomId: room.id,
-    players: room.players.map(p => ({
-      id: p.id, code: p.code, connected: p.connected, score: p.score, isBot: p.isBot || false, name: p.name
-    })),
-    walls: room.walls, destructibles: room.destructibles, bgSeed: room.bgSeed,
-    colors: PLAYER_COLORS
-  });
-}
-
-function sendToOneGame(ws, obj) {
-  if (ws && ws.readyState === 1) {
-    ws.send(JSON.stringify(obj));
-  }
-}
-
-function sendToPlayer(room, id, obj) {
-  const p = room.players[id - 1];
-  if (p && p.ws && p.ws.readyState === 1) {
-    p.ws.send(JSON.stringify(obj));
-  }
 }
 
 // ── Start ──
