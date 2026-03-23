@@ -8,6 +8,7 @@ const { restartRound } = require('./game-loop');
 const { parseIncomingMessage } = require('./ws-protocol');
 const { handleRegisterGame, handleSetPlayerCount, handleAddBot, handleRemoveBot } = require('./room-lobby');
 const { handleJoin } = require('./join-flow');
+const { handleReady, handleUnready } = require('./ready-flow');
 
 function handleWSConnection(ws) {
   let assignedRole = null;
@@ -87,26 +88,11 @@ function handleWSConnection(ws) {
         break;
 
       case 'ready':
-        if (typeof assignedRole === 'number' && assignedRoom && !assignedRoom.gameRunning) {
-          const room = assignedRoom;
-          room.readyState[assignedRole] = true;
-          console.log(`Room ${room.id}: Player ${assignedRole} is ready`);
-          sendToGame(room, { type: 'ready_update', readyState: room.readyState });
-          const allReady = room.players.every(p => room.readyState[p.id]);
-          if (allReady) {
-            console.log(`Room ${room.id}: All players ready — starting next round`);
-            restartRound(room);
-          }
-        }
+        handleReady({ assignedRole, assignedRoom });
         break;
 
       case 'unready':
-        if (typeof assignedRole === 'number' && assignedRoom && !assignedRoom.gameRunning) {
-          const room = assignedRoom;
-          room.readyState[assignedRole] = false;
-          console.log(`Room ${room.id}: Player ${assignedRole} is not ready`);
-          sendToGame(room, { type: 'ready_update', readyState: room.readyState });
-        }
+        handleUnready({ assignedRole, assignedRoom });
         break;
     }
   });
