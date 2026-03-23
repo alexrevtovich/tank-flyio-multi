@@ -1,12 +1,13 @@
 'use strict';
 
-const { MAX_WS_MESSAGE_BYTES, PLAYER_COLORS, HEAL_COOLDOWN } = require('./config');
+const { MAX_WS_MESSAGE_BYTES, HEAL_COOLDOWN } = require('./config');
 const { sendToGame, sendToPlayer } = require('./net');
 const { tryShoot } = require('./projectiles');
-const { rooms, checkRoomCleanup } = require('./rooms');
-const { startGame, restartRound } = require('./game-loop');
+const { checkRoomCleanup } = require('./rooms');
+const { restartRound } = require('./game-loop');
 const { parseIncomingMessage } = require('./ws-protocol');
 const { handleRegisterGame, handleSetPlayerCount, handleAddBot, handleRemoveBot } = require('./room-lobby');
+const { handleJoin } = require('./join-flow');
 
 function handleWSConnection(ws) {
   let assignedRole = null;
@@ -40,60 +41,8 @@ function handleWSConnection(ws) {
         break;
 
       case 'join': {
-        const code = (msg.code || '').toUpperCase().trim();
-        const roomId = (msg.roomId || '').toUpperCase().trim();
-
-        let room = null;
-        if (roomId && rooms.has(roomId)) {
-          room = rooms.get(roomId);
-        } else {
-          for (const [, r] of rooms) {
-            if (r.players.find(p => p.code === code)) {
-              room = r;
-              break;
-            }
-          }
-        }
-
-        if (!room) {
-          ws.send(JSON.stringify({ type: 'error', message: 'Room not found' }));
-          return;
-        }
-
-        const player = room.players.find(p => p.code === code);
-        if (!player) {
-          ws.send(JSON.stringify({ type: 'error', message: 'Invalid code' }));
-          return;
-        }
-        if (player.ws && player.ws !== ws) {
-          try { player.ws.close(); } catch (_e) { /* old WS already closing */ }
-        }
-        player.ws = ws;
-        player.connected = true;
-        assignedRole = player.id;
-        assignedRoom = room;
-
-        const rawName = (msg.name || '').trim().substring(0, 5);
-        if (rawName.length > 0) player.name = rawName;
-
-        ws.send(JSON.stringify({
-          type: 'welcome',
-          playerId: player.id,
-          color: PLAYER_COLORS[player.id - 1],
-          name: player.name
-        }));
-
-        sendToGame(room, { type: 'player_joined', playerId: player.id, name: player.name });
-        console.log(`Room ${room.id}: Player ${player.id} (${player.name}) joined with code ${code}`);
-
-        if (room.players.every(p => p.connected) && !room.gameRunning) {
-          const hasScores = room.players.some(p => p.score > 0);
-          if (hasScores) {
-            restartRound(room);
-          } else {
-            startGame(room);
-          }
-        }
+        const newState = handleJoin(ws, msg, { assignedRole, assignedRoom });
+        if (newState) { assignedRole = newState.assignedRole; assignedRoom = newState.assignedRoom; }
         break;
       }
 
